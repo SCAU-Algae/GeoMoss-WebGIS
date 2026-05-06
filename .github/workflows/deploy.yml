@@ -1,0 +1,231 @@
+name: FullStack Build & Multi-Deploy
+
+on:
+  push:
+    branches: [ main ]
+    # 监听main分支的推送事件，确保每次更新都会触发部署流程
+  workflow_dispatch:
+
+# 权限设置：允许读取仓库内容，允许写 Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # ==========================================
+  # 第一步：构建 (Build)
+  # ==========================================
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Vue Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json' # 明确依赖路径
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Build Frontend Project
+        working-directory: ./frontend
+        run: npm run build
+        # 此时生成了 dist 文件夹
+
+      # 1. 为“自己”的 GitHub Pages 准备 artifact
+      - name: Upload pages artifact (for self)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+      # 2. 为“外部”的 Pages 仓库准备 artifact (普通文件)
+      - name: Upload dist artifact (for external sync)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-files
+          path: frontend/dist
+
+  # ==========================================
+  # 第二步：部署到 Vue 仓库自己的 Pages
+  # ==========================================
+  deploy-to-self:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ==========================================
+  # 第三步：同步到 NEGIAO.github.io中的WebGIS目录
+  # （为posit connect cloud准备最新build版本并同步更新）
+  # ==========================================
+  sync-to-main-repo:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 下载构建好的 Vue 文件
+      - name: Download built files
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-files
+          path: dist-for-sync
+
+      # 2. 逻辑：克隆主仓库 -> 删除原子目录 -> 放入新文件 -> 推送
+      - name: Push to NEGIAO.github.io
+        env:
+          # Vue 仓库的 Secrets 里配置这个 Token 防止泄露，权限只给 NEGIAO.github.io 仓库的写权限
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          # --- 配置变量 ---
+          TARGET_REPO="NEGIAO/NEGIAO.github.io"   # 主页仓库 (三件套)
+          TARGET_BRANCH="main"                    # 主页仓库的分支
+          TARGET_DIR="WebGIS"                     # Vue 项目在主页仓库里名字
+                                                  # 最终访问路径会是: https://NEGIAO.github.io/WebGIS/
+
+          # --- 设置 Git 用户 ---
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "actions@github.com"
+
+          # --- 克隆主仓库 ---
+          echo "Cloning target repo..."
+          git clone --depth 1 --branch $TARGET_BRANCH "https://x-access-token:${DEPLOY_TOKEN}@github.com/${TARGET_REPO}.git" target_repo
+          
+          cd target_repo
+
+          # --- 替换文件 ---
+          echo "Updating subdirectory: ${TARGET_DIR}"
+          
+          # 如果目标目录存在，先清空 (保留目录结构，删除内容)
+          # 这样可以确保旧版本的文件被清理掉
+          if [ -d "$TARGET_DIR" ]; then
+            rm -rf "$TARGET_DIR"
+          fi
+          
+          mkdir -p "$TARGET_DIR"
+
+          # 将下载的 dist 文件复制进去
+          # ../dist-for-sync 是在上一步下载 artifact 的路径
+          cp -R ../dist-for-sync/. "$TARGET_DIR/"
+
+          # 创建 .nojekyll 防止下划线文件丢失
+          touch "$TARGET_DIR/.nojekyll"
+
+          # --- 提交并推送 ---
+          echo "Committing changes..."
+          git add --all
+          
+          if git diff --staged --quiet; then
+            echo "No changes detected. Skipping push."
+          else
+            git commit -m "Update WebGIS from source repo: ${GITHUB_SHA::7}"
+            echo "Pushing to ${TARGET_REPO}..."
+            git push "https://x-access-token:${DEPLOY_TOKEN}@github.com/${TARGET_REPO}.git" $TARGET_BRANCH
+          fi
+
+# ==========================================
+  # 第四步：同步到 Hugging Face Static Space
+  # (仅前端构建产物 dist)，HF对大数量文件有限制，无法推送成功啊
+# ==========================================
+  deploy-frontend-to-hf:
+      needs: build
+      runs-on: ubuntu-latest
+      steps:
+        - name: Download built files
+          uses: actions/download-artifact@v4
+          with:
+            name: dist-files
+            path: dist-to-hf
+
+        - name: Push Static Dist with LFS to HF
+          env:
+            HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          run: |
+            cd dist-to-hf
+            
+            # 1. 彻底删除瓦片文件夹（HF对大数量文件有限制）
+            if [ -d "tiles" ]; then
+              rm -rf tiles/
+            fi
+            
+            # 2. 初始化 Git 和 LFS
+            git init
+            git lfs install
+            
+            # 3. 强制追踪所有潜在的二进制文件为 LFS
+            # 这样 HF 就会通过 LFS 存储它们，而不会在 pre-receive 阶段拦截
+            git lfs track "images/*.webp"
+            git lfs track "images/*.png"
+            git lfs track "images/*.jpg"
+            git lfs track "assets/*.kmz"
+            git lfs track "assets/*.kml"
+            git lfs track "*.ico"
+            
+            # 必须添加 .gitattributes 否则追踪不生效
+            git add .gitattributes
+            
+            git config user.name "github-actions[bot]"
+            git config user.email "actions@github.com"
+
+            # 4. 注入元数据
+            cat <<EOT > README.md
+            ---
+            title: WebGIS-Frontend
+            emoji: 🚀
+            sdk: static
+            ---
+            EOT
+
+            # 5. 提交并推送
+            git add .
+            git commit -m "Updatate WebGIS frontend dist to Hugging Face: ${GITHUB_SHA::7}"
+            
+            echo "Pushing to Hugging Face..."
+            git push --force "https://NEGIAO:${HF_TOKEN}@huggingface.co/spaces/NEGIAO/Web" master:main
+            
+# ========================================== 
+  # 第五步：同步到 Hugging Face 
+  # (仅Backend后端代码)
+# ==========================================
+  sync-to-huggingface:
+      needs: build
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout Code
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 0
+
+        - name: Push Backend Only to HF
+          env:
+            HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          run: |
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "actions@github.com"
+
+            # 验证后端必要文件是否存在
+            echo "Checking backend files..."
+            test -f backend/app.py || (echo "Missing backend/app.py" && exit 1)
+            test -f backend/pyproject.toml || (echo "Missing backend/pyproject.toml" && exit 1)
+            test -f backend/Dockerfile || (echo "Missing backend/Dockerfile" && exit 1)
+            echo "All required backend files found ✓"
+
+            # 使用 git subtree 推送 backend 目录到 Hugging Face
+            # --force 参数确保覆盖远程分支，使用 :main 映射到 HF space 的 main 分支
+            echo "Pushing backend to Hugging Face Spaces..."
+            git push --force "https://NEGIAO:${HF_TOKEN}@huggingface.co/spaces/NEGIAO/WebGIS" `git subtree split --prefix=backend HEAD`:main
+
+            echo "Backend deployment to Hugging Face completed ✓"

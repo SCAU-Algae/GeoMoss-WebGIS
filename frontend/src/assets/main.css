@@ -1,0 +1,148 @@
+@import './base.css';
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+a {
+  color: var(--neon-cyan);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-spatial);
+}
+a:hover {
+  color: var(--text-primary);
+}
+
+/* ==============================
+   Vue Transition: expand-collapse
+   ============================== */
+.expand-enter-active {
+  transition: opacity var(--duration-slow) var(--ease-panel),
+    max-height var(--duration-slow) var(--ease-panel),
+    transform var(--duration-slow) var(--ease-panel);
+  overflow: hidden;
+}
+.expand-leave-active {
+  transition: opacity 180ms ease,
+    max-height 220ms var(--ease-spatial),
+    transform 220ms var(--ease-spatial);
+  overflow: hidden;
+}
+.expand-enter-from {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-6px);
+}
+.expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-4px);
+}
+
+/* ==============================
+   Vue Transition: fade
+   ============================== */
+.fade-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-spatial);
+}
+.fade-leave-active {
+  transition: opacity var(--duration-fast) ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ==============================
+   Mobile Responsive Overrides
+   ============================== */
+@media (max-width: 768px) {
+  :root {
+    --space-xs: 3px;
+    --space-sm: 6px;
+    --space-md: 10px;
+    --space-lg: 14px;
+    --space-xl: 20px;
+    --font-size-xs: 10px;
+    --font-size-sm: 11px;
+    --font-size-md: 13px;
+    --font-size-lg: 15px;
+    --font-size-xl: 18px;
+    --font-size-2xl: 22px;
+    --glass-blur: 10px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 10px;
+  }
+
+  .info-panel {
+    width: 92vw !important;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+  }
+
+  .top-bar {
+    height: 48px;
+    padding: 0 10px;
+  }
+  .title-text { font-size: 16px; }
+  .nav-btn { padding: 5px 10px; font-size: 11px; gap: 4px; }
+  .btn-text { font-size: 11px; }
+
+  .map-wrapper {
+    border-radius: 0;
+  }
+
+  .toolbox-panel {
+    padding: var(--space-sm);
+  }
+
+  .cesium-wrapper {
+    border-radius: 0;
+  }
+}
+
+/* iOS safe area */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .home-container {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .cesium-controls { bottom: calc(60px + env(safe-area-inset-bottom)); }
+  .info-panel { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+@media (max-width: 480px) {
+  .top-bar {
+    height: 44px;
+    padding: 0 6px;
+    gap: 6px;
+  }
+  .title-text { display: none; }
+  .nav-btn { padding: 4px 8px; }
+  .nav-btn .btn-text { display: none; }
+  .btn-icon { margin-right: 0; }
+  .logo-icon { height: 28px; }
+
+  .info-panel {
+    width: 100vw !important;
+  }
+
+  .tab {
+    font-size: 11px;
+    padding: 6px 2px;
+  }
+
+  .news-platform-tabs {
+    gap: 4px;
+  }
+  .platform-chip {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+}
