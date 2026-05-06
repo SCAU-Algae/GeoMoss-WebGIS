@@ -3,7 +3,7 @@
  * 密钥通过 Vite 环境变量注入。
  */
 
-const AMAP_KEY = import.meta.env.VITE_AMAP_WEB_SERVICE_KEY || 'f90670d65c72653d7c379d95db238cb5';
+const AMAP_KEY = import.meta.env.VITE_AMAP_WEB_SERVICE_KEY ;
 
 function wgs84ToGcj02(lng, lat) {
     const d = Math.PI / 180;
