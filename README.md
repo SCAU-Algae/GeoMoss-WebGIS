@@ -142,6 +142,21 @@ GeoMoss-WebGIS/
 | Icons | Lucide Vue Next |
 | Animation | @vueuse/motion |
 
+## Attribution
+
+This project is a derivative work based on **[NEGIAO/WebGIS-Dev](https://github.com/NEGIAO/WebGIS-Dev)** (MIT License), created by [@NEGIAO](https://github.com/NEGIAO). The original project provided the foundational WebGIS architecture (Vue 3 + OpenLayers + FastAPI), which has since been significantly extended with:
+
+- Complete UI/UX redesign (Arc Browser-inspired dark glassmorphism)
+- SHP → 3D Tiles building extrusion pipeline
+- Open-Meteo weather integration with Amap direct geocode
+- Email registration with CAPTCHA + SMTP verification
+- Hot news aggregation from multiple platforms
+- Feng Shui Compass enhancements
+- 3D layer management and camera fly transitions
+- Aurora design system with frosted glass surfaces
+
+All modifications retain the original MIT License.
+
 ## License
 
 MIT — freely use, modify, and distribute.
