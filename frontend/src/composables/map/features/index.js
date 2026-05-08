@@ -17,6 +17,7 @@ export { createManagedLayerStyleFeature } from './useManagedLayerStyle';
 export { createMapEventHandlers } from './useMapEventHandlers';
 export { createMapSearchAndCoordinateInputFeature } from './useMapSearchAndCoordinateInput';
 export { createMapUIEventHandlers } from './useMapUIEventHandlers';
+export { createOverviewBasemapControl } from './useOverviewBasemapControl';
 export { createRightDragZoomController } from './useRightDragZoom';
 export { createRouteRenderingFeature } from './useRouteRendering';
 export { createRouteStepInteraction } from './useRouteStepInteraction';

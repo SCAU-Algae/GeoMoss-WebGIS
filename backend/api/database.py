@@ -466,6 +466,121 @@ def init_db():
         """)
         safe("CREATE INDEX IF NOT EXISTS idx_agent_user_config_updated_at ON agent_user_config(updated_at)")
 
+        # 管理员地理数据生产链路：行政区划、3D 图层、后台任务。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS admin_boundary_datasets (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                source_filename TEXT NOT NULL DEFAULT '',
+                storage_path TEXT NOT NULL DEFAULT '',
+                field_code TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                field_level TEXT NOT NULL DEFAULT '',
+                fields_json TEXT NOT NULL DEFAULT '[]',
+                feature_count INTEGER NOT NULL DEFAULT 0,
+                bbox_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'ready',
+                created_by TEXT NOT NULL DEFAULT 'admin',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        safe("CREATE INDEX IF NOT EXISTS idx_boundary_status ON admin_boundary_datasets(status)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS admin_boundary_features (
+                id SERIAL PRIMARY KEY,
+                dataset_id TEXT NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT NOT NULL,
+                level TEXT NOT NULL DEFAULT '',
+                bbox_json TEXT NOT NULL DEFAULT '[]',
+                geometry_json TEXT NOT NULL DEFAULT '{}',
+                properties_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                UNIQUE(dataset_id, code)
+            )
+        """)
+        if not _column_exists(raw, "admin_boundary_features", "geometry_json"):
+            safe("ALTER TABLE admin_boundary_features ADD COLUMN geometry_json TEXT NOT NULL DEFAULT '{}'")
+        safe("CREATE INDEX IF NOT EXISTS idx_boundary_features_dataset ON admin_boundary_features(dataset_id)")
+        safe("CREATE INDEX IF NOT EXISTS idx_boundary_features_code ON admin_boundary_features(code)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS three_d_layers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                tileset_url TEXT NOT NULL DEFAULT '',
+                storage_path TEXT NOT NULL DEFAULT '',
+                source_filename TEXT NOT NULL DEFAULT '',
+                boundary_dataset_id TEXT NOT NULL DEFAULT '',
+                height_field TEXT NOT NULL DEFAULT '',
+                classification_field TEXT NOT NULL DEFAULT '',
+                color_ramp TEXT NOT NULL DEFAULT 'greens',
+                base_color TEXT NOT NULL DEFAULT '#68c282',
+                opacity DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                feature_count INTEGER NOT NULL DEFAULT 0,
+                bbox_json TEXT NOT NULL DEFAULT '[]',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                published_at TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT 'admin',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        safe("CREATE INDEX IF NOT EXISTS idx_three_d_layers_status ON three_d_layers(status)")
+        safe("CREATE INDEX IF NOT EXISTS idx_three_d_layers_sort ON three_d_layers(sort_order, updated_at)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS terrain_layers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                source_path TEXT NOT NULL DEFAULT '',
+                cropped_path TEXT NOT NULL DEFAULT '',
+                tile_url_template TEXT NOT NULL DEFAULT '',
+                bounds_json TEXT NOT NULL DEFAULT '[]',
+                min_height DOUBLE PRECISION NOT NULL DEFAULT 0,
+                max_height DOUBLE PRECISION NOT NULL DEFAULT 0,
+                width INTEGER NOT NULL DEFAULT 0,
+                height INTEGER NOT NULL DEFAULT 0,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                published_at TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT 'admin',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        safe("CREATE INDEX IF NOT EXISTS idx_terrain_layers_status ON terrain_layers(status)")
+        safe("CREATE INDEX IF NOT EXISTS idx_terrain_layers_sort ON terrain_layers(sort_order, updated_at)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS geodata_processing_jobs (
+                job_id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                phase TEXT NOT NULL DEFAULT 'queued',
+                progress DOUBLE PRECISION NOT NULL DEFAULT 0,
+                message TEXT NOT NULL DEFAULT '',
+                layer_id TEXT NOT NULL DEFAULT '',
+                dataset_id TEXT NOT NULL DEFAULT '',
+                result_json TEXT NOT NULL DEFAULT '{}',
+                error TEXT NOT NULL DEFAULT '',
+                cancel_requested INTEGER NOT NULL DEFAULT 0,
+                created_by TEXT NOT NULL DEFAULT 'admin',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                finished_at TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        safe("CREATE INDEX IF NOT EXISTS idx_geodata_jobs_status ON geodata_processing_jobs(status, updated_at)")
+        safe("CREATE INDEX IF NOT EXISTS idx_geodata_jobs_layer ON geodata_processing_jobs(layer_id)")
+
         raw.commit()
         logger.info("PostgreSQL 数据库初始化完成")
     except Exception:

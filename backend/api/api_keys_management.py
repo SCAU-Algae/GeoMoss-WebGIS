@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/admin/api-keys", tags=["API Keys Management"])
 
 
 class ApiKeyConfig(BaseModel):
-    key_name: str = Field(..., description="密钥名称: amap_key, agent_api_key, agent_token")
+    key_name: str = Field(..., description="密钥名称: amap_key, agent_api_key, agent_token, tianditu_tk, dashscope_api_key")
     key_value: str = Field(..., min_length=1, max_length=5000, description="密钥值")
 
 
@@ -96,6 +96,10 @@ def _set_api_key_sync(key_name: str, key_value: str, updated_by: str = "admin") 
     return True
 
 
+def _allowed_api_keys() -> set[str]:
+    return {"amap_key", "agent_api_key", "agent_token", "tianditu_tk", "dashscope_api_key", "qwen_vision_api_key"}
+
+
 def _delete_api_key_sync(key_name: str) -> bool:
     """删除 API 密钥"""
     _ensure_api_keys_table_sync()
@@ -166,7 +170,7 @@ async def set_api_key(
     key_value = str(payload.key_value or "").strip()
     
     # 允许的密钥名称
-    allowed_keys = {"amap_key", "agent_api_key", "agent_token", "tianditu_tk"}
+    allowed_keys = _allowed_api_keys()
     
     if key_name not in allowed_keys:
         raise HTTPException(

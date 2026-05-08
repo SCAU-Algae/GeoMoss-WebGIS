@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useMessage } from '../../composables/useMessage'
+import AdminGeodataPanel from './AdminGeodataPanel.vue'
 import {
   apiAdminDeleteRows,
   apiAdminGetTableRows,
@@ -336,6 +337,10 @@ onMounted(async () => {
     </div>
 
     <div class="admin-card">
+      <AdminGeodataPanel />
+    </div>
+
+    <div class="admin-card">
       <div class="admin-title-row">
         <h5 class="admin-subtitle">数据库管理</h5>
         <button class="admin-mini-btn" type="button" :disabled="loadingTables" @click="loadTables">
@@ -388,14 +393,15 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  color: var(--text-primary);
 }
 
 .admin-card {
-  border: 1px solid rgba(76, 175, 80, 0.2);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
   padding: 12px;
-  box-shadow: 0 4px 12px rgba(49, 111, 69, 0.05);
+  box-shadow: var(--shadow-panel);
 }
 
 .admin-title-row {
@@ -409,14 +415,14 @@ onMounted(async () => {
 .admin-title {
   margin: 0;
   font-size: 15px;
-  color: var(--acc-text-strong, #214a31);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .admin-subtitle {
   margin: 0 0 10px;
   font-size: 13px;
-  color: var(--acc-text-main, #2c5f3e);
+  color: var(--text-primary);
 }
 
 .overview-grid {
@@ -426,24 +432,25 @@ onMounted(async () => {
 }
 
 .overview-item {
-  border: 1px solid rgba(76, 175, 80, 0.15);
-  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--surface-1);
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-shadow: var(--shadow-button);
 }
 
 .overview-label {
   font-size: 12px;
-  color: var(--acc-text-soft, #5d7f6a);
+  color: var(--text-muted);
 }
 
 .overview-value {
   font-size: 18px;
   font-weight: 600;
-  color: var(--acc-text-strong, #214a31);
+  color: var(--neon-cyan);
 }
 
 .admin-field-label {
@@ -451,7 +458,7 @@ onMounted(async () => {
   margin: 10px 0 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--acc-text-strong, #214a31);
+  color: var(--text-secondary);
 }
 
 .admin-input,
@@ -459,21 +466,27 @@ onMounted(async () => {
 .admin-textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(76, 175, 80, 0.3);
-  border-radius: 8px;
-  background: #ffffff;
-  color: #333333;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(6, 11, 16, 0.62);
+  color: var(--text-primary);
   padding: 10px;
   font-size: 13px;
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-fast) var(--ease-spatial), box-shadow var(--duration-fast) var(--ease-spatial), background var(--duration-fast) var(--ease-spatial);
+}
+
+.admin-input::placeholder,
+.admin-textarea::placeholder {
+  color: var(--text-muted);
 }
 
 .admin-input:focus,
 .admin-select:focus,
 .admin-textarea:focus {
   outline: none;
-  border-color: #59b66a;
-  box-shadow: 0 0 0 3px rgba(89, 182, 106, 0.15);
+  border-color: var(--border-active);
+  background: var(--surface-card-strong);
+  box-shadow: var(--neon-cyan-glow);
 }
 
 .admin-textarea {
@@ -484,13 +497,13 @@ onMounted(async () => {
 
 .admin-action-btn,
 .admin-mini-btn {
-  background: linear-gradient(135deg, #6fca7a 0%, #4caf50 100%);
-  color: #ffffff;
-  border: 1px solid rgba(63, 148, 75, 0.55);
-  border-radius: 8px;
+  background: var(--neon-cyan-dim);
+  color: var(--neon-cyan);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 500;
+  transition: all var(--duration-fast) var(--ease-spatial);
+  font-weight: 700;
 }
 
 .admin-action-btn {
@@ -498,7 +511,7 @@ onMounted(async () => {
   padding: 10px 14px;
   font-size: 13px;
   width: 100%;
-  box-shadow: 0 4px 10px rgba(58, 129, 76, 0.15);
+  box-shadow: var(--shadow-button);
 }
 
 .admin-mini-btn {
@@ -508,9 +521,11 @@ onMounted(async () => {
 
 .admin-mini-btn:hover:not(:disabled),
 .admin-action-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #7fd489 0%, #57b862 100%);
+  background: var(--surface-hover);
+  border-color: var(--border-active);
+  color: var(--neon-cyan);
   transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(58, 129, 76, 0.25);
+  box-shadow: var(--neon-cyan-glow);
 }
 
 .admin-mini-btn:disabled,
@@ -518,8 +533,9 @@ onMounted(async () => {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
-  background: #a9d9b4;
-  border-color: transparent;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
 }
 
 .admin-mini-btn.danger {
@@ -544,7 +560,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: var(--acc-text-soft, #5d7f6a);
+  color: var(--text-muted);
 }
 
 .rows-wrap {
@@ -561,29 +577,29 @@ onMounted(async () => {
   width: 6px;
 }
 .rows-wrap::-webkit-scrollbar-thumb {
-  background: rgba(76, 175, 80, 0.3);
+  background: var(--border-active);
   border-radius: 4px;
 }
 
 .row-item {
-  border: 1px solid rgba(76, 175, 80, 0.2);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
   padding: 10px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-button);
 }
 
 .row-json {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: #1d4027;
+  color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(243, 255, 247, 0.8);
+  background: rgba(6, 11, 16, 0.62);
   padding: 8px;
-  border-radius: 6px;
-  border: 1px dashed rgba(76, 175, 80, 0.2);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-subtle);
 }
 
 .row-actions {
@@ -595,12 +611,12 @@ onMounted(async () => {
 
 .rows-empty {
   margin-top: 10px;
-  border: 1px dashed rgba(76, 175, 80, 0.4);
-  border-radius: 10px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
   padding: 16px;
   font-size: 13px;
-  color: var(--acc-text-soft, #5d7f6a);
+  color: var(--text-muted);
   text-align: center;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--surface-1);
 }
 </style>

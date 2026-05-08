@@ -1,171 +1,119 @@
-# GeoMoss — 2D/3D WebGIS Platform
+# GeoMoss WebGIS
 
-[![Vue](https://img.shields.io/badge/Vue-3.3+-4FC08D?logo=vuedotjs)](https://vuejs.org/)
-[![Vite](https://img.shields.io/badge/Vite-5.0+-646CFF?logo=vite)](https://vitejs.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![OpenLayers](https://img.shields.io/badge/OpenLayers-8.x-FFD700?logo=openlayers)](https://openlayers.org/)
-[![Cesium](https://img.shields.io/badge/Cesium-1.108-6CACE4?logo=cesium)](https://cesium.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue)](#license)
+GeoMoss is a full-stack WebGIS platform for 2D mapping, Cesium 3D visualization, 3D Tiles data management, weather analysis, AI-assisted spatial interpretation, and cultural landscape analysis.
+
+Current release: **v3.1.0**
+Last updated: **2026-05-08**
 
 ## Overview
 
-**GeoMoss** is a full-stack WebGIS platform featuring 2D/3D mapping, real-time weather, SHP-to-3D-Tiles conversion, and AI-powered spatial analysis. Built with Vue 3 + OpenLayers + Cesium on the frontend and FastAPI + PostgreSQL on the backend.
+- Frontend: Vue 3, Vite, OpenLayers, Cesium, Pinia, ECharts
+- Backend: FastAPI, SQLite/PostgreSQL-compatible access layer, async task APIs
+- 2D GIS: basemap switching, TOC layer management, draw/measure tools, attribute table, map swipe
+- 3D GIS: Cesium 3D mode, Tianditu imagery/terrain support, 3D Tiles styling, inspection, drawing, measuring, feature popup
+- Data pipeline: user layer import/export, administrator geodata management, SHP to 3D Tiles conversion
+- AI modules: chat assistant, Fengshui/environment analysis with DEM, water data, Tianditu remote-sensing screenshot, Qwen vision, DeepSeek-style structured insight generation
+- Admin console: users, API keys, API usage, geodata, 3D tiles and background task progress
 
-- **Frontend**: Vue 3 + Vite + OpenLayers + Cesium
-- **Backend**: FastAPI + Python + PostgreSQL
-- **Deployment**: Self-hosted on VPS (154.201.94.222), domain `www.geomoss.top`
+## v3.1.0 Highlights
 
-## Features
+- Rebranded the application from the old slogan to **GeoMoss** and replaced the header logo.
+- Removed the Fengshui compass feature block and its unused runtime modules, store, services, SVG themes, explanation data, and URL state helpers.
+- Removed the shared-resource UI/loading path and cleaned the default public shared sample layers.
+- Refactored backend startup into route/lifecycle/core modules to keep `app.py` small and extensible.
+- Added administrator-only 3D geodata workflows: administrative split source or generated grid split, 3D layer upload, task progress, storage and deletion.
+- Added 4-core/8GB friendly conversion controls: queued processing, safer upload staging, tile splitting, progress tracking, and less blocking frontend behavior.
+- Added Cesium tools through a registry-style adapter: measure, sketch drawing, 3D Tiles style controls, feature picking popup, navigation bookmarks and lightweight visual effects.
+- Added Fengshui/environment analysis as a native tool integrated with the existing floating-panel UI, DEM/water services, Tianditu imagery capture, Qwen vision and structured AI insights.
+- Improved weather panel responsiveness and administrator API/settings UI consistency.
 
-### Map & GIS
-- 2D OpenLayers with multi-source basemaps (Tianditu, Google, Mapbox, custom XYZ/WMS)
-- 3D Cesium globe with SHP-to-3D-Tiles building extrusion
-- Layer management with drag-and-drop reorder, opacity, label fields
-- Drawing tools (point/line/polygon/circle), measurement, coordinate picker
-- Basemap swipe comparison
-- District boundary loading with label dedup
-
-### Data Pipeline
-- Multi-format import: GeoJSON, KML/KMZ, Shapefile, GeoTIFF, CSV
-- SHP → 3D Tiles wizard: upload → field selection → color/opacity styling → auto-convert → load
-- Layer export: CSV, TXT, GeoJSON, KML
-
-### Weather
-- Powered by Open-Meteo (free, no API key)
-- Amap direct geocode for district/city/province labels
-- 7-day forecast with temperature trend charts
-- Rain detection alerts
-- 3-level panel: collapsed / sidebar / fullscreen
-
-### AI & Tools
-- AI Chat Assistant (multi-model, guest quota, preferences)
-- Bus & Drive route planning
-- Feng Shui Compass (SVG layers, 5 themes, mobile HUD mode with gyroscope)
-- Weather dashboard
-- Hot news aggregation (Weibo, Zhihu, GitHub, Hacker News, etc.)
-
-### Auth & Account
-- Username/password login (guest / registered / admin roles)
-- Email registration with CAPTCHA + SMTP verification
-- Password reset via bound email
-- API key management
-
-### UI/UX
-- Dark-first Arc Browser inspired design system
-- Aurora gradient backdrop (mint-to-cyan)
-- Frosted glass surfaces with backdrop-saturate
-- Spring-easing transitions (`cubic-bezier(0.34, 1.56, 0.64, 1)`)
-- Mobile responsive with safe area support
-
-## Quick Start
-
-```bash
-# Clone
-git clone https://github.com/SCAU-Algae/GeoMoss-WebGIS.git
-cd GeoMoss-WebGIS
-
-# Frontend
-cd frontend && npm install && npm run dev
-# → http://localhost:5173
-
-# Backend
-cd backend
-export SMTP_USER="your_qq@qq.com" SMTP_PASS="your_smtp_auth_code"
-python3 -m uvicorn app:app --host 0.0.0.0 --port 8000
-# → http://localhost:8000/docs
-```
-
-Or use the one-click script:
-
-```bash
-bash start-webgis.sh
-```
-
-## Environment Variables
-
-### Frontend (`frontend/.env`)
-```bash
-VITE_TIANDITU_TK=your_tianditu_token
-VITE_AMAP_WEB_SERVICE_KEY=your_amap_key
-```
-
-### Backend (shell env)
-```bash
-SMTP_HOST=smtp.qq.com
-SMTP_PORT=465
-SMTP_USER=your_qq@qq.com
-SMTP_PASS=your_qq_smtp_auth_code
-DATABASE_URL=postgresql://user:password@localhost/webgis
-```
+Full release notes are in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Project Structure
 
-```
+```text
 GeoMoss-WebGIS/
 ├── frontend/
+│   ├── public/                 # Static public assets
 │   ├── src/
-│   │   ├── api/              # API layer (weather, geocoding, backend)
-│   │   ├── components/       # Vue components
-│   │   │   ├── Cesium/       # Cesium 3D globe + Wind2D
-│   │   │   ├── UserCenter/   # Account, admin, API keys
-│   │   │   └── feng-shui-compass-svg/  # Compass themes & types
-│   │   ├── composables/      # Reusable logic
-│   │   ├── stores/           # Pinia stores (auth, weather, layers, compass...)
-│   │   ├── utils/            # GIS parsers, coordinate transforms
-│   │   └── views/            # HomeView, RegisterView
-│   └── public/               # Static assets, adcode.json
+│   │   ├── api/                # Frontend API clients
+│   │   ├── components/         # Vue UI components
+│   │   │   ├── Cesium/         # Cesium scene and tool panels
+│   │   │   └── UserCenter/     # Account/admin/API/geodata panels
+│   │   ├── composables/        # Reusable OpenLayers/Cesium feature modules
+│   │   ├── constants/          # Basemap and style configuration
+│   │   ├── stores/             # Pinia stores
+│   │   ├── utils/              # GIS parsers, runtime loaders, helpers
+│   │   └── views/              # Home/admin/register views
+│   └── package.json
 ├── backend/
-│   ├── api/
-│   │   ├── auth.py           # Authentication & sessions
-│   │   ├── email_auth.py     # Email registration + CAPTCHA
-│   │   ├── shp_to_3dtiles.py # SHP → 3D Tiles converter
-│   │   ├── threed.py         # 3D processing API
-│   │   └── proxy.py          # Tile & API proxy
-│   ├── app.py                # FastAPI entry
-│   └── data/                 # Runtime data
-├── Docs/                     # Development logs
-└── design-system/            # UI/UX Pro Max design tokens
+│   ├── api/                    # FastAPI route modules
+│   ├── core/                   # App lifecycle, CORS and shared bootstrap
+│   ├── scripts/                # Operational scripts
+│   ├── services/               # Domain services including Fengshui analysis
+│   ├── app.py                  # FastAPI entrypoint
+│   └── pyproject.toml
+├── Docs/                       # Historical development notes
+├── docs/                       # Current design and release documentation
+├── CHANGELOG.md
+├── NOTICE.md
+└── README.md
 ```
 
-## Tech Stack
+## Local Development
 
-| Layer | Stack |
-|-------|-------|
-| Frontend | Vue 3.3+, Vite 5.0+, Pinia, Vue Router |
-| 2D Map | OpenLayers 8.x |
-| 3D Map | Cesium 1.108 (Tianditu) |
-| Backend | FastAPI, Uvicorn, Pydantic |
-| Database | PostgreSQL (with sqlite3 adapter) |
-| Email | SMTP (QQ Mail) |
-| Weather | Open-Meteo + Amap geocode |
-| Charts | ECharts 5.x |
-| Icons | Lucide Vue Next |
-| Animation | @vueuse/motion |
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Backend:
+
+```bash
+cd backend
+python3 -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
+```
+
+Production-style frontend build:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Environment
+
+Frontend `.env.local` example:
+
+```env
+VITE_BACKEND_URL=http://localhost:8000
+VITE_TIANDITU_TK=your_tianditu_token
+VITE_AMAP_WEB_SERVICE_KEY=your_amap_web_service_key
+VITE_BASE_URL=./
+```
+
+Backend environment/API keys can be configured through the admin API key panel or process environment:
+
+```env
+TIANDITU_TK=your_tianditu_token
+AMAP_KEY=your_amap_key
+DASHSCOPE_API_KEY=your_dashscope_key
+AGENT_API_KEY=your_text_model_key
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_USER=your_mailbox
+SMTP_PASS=your_smtp_auth_code
+```
+
+Do not commit real API keys, tokens, user uploads, generated 3D Tiles, logs, or runtime databases.
 
 ## Attribution
 
-This project is a derivative work based on **[NEGIAO/WebGIS-Dev](https://github.com/NEGIAO/WebGIS-Dev)** (MIT License), created by [@NEGIAO](https://github.com/NEGIAO). The original project provided the foundational WebGIS architecture (Vue 3 + OpenLayers + FastAPI), which has since been significantly extended with:
-
-- Complete UI/UX redesign (Arc Browser-inspired dark glassmorphism)
-- SHP → 3D Tiles building extrusion pipeline
-- Open-Meteo weather integration with Amap direct geocode
-- Email registration with CAPTCHA + SMTP verification
-- Hot news aggregation from multiple platforms
-- Feng Shui Compass enhancements
-- 3D layer management and camera fly transitions
-- Aurora design system with frosted glass surfaces
-
-All modifications retain the original MIT License.
+GeoMoss is derived from and substantially extends the original MIT-licensed **NEGIAO/WebGIS-Dev** project. This repository also references ideas and public documentation from several open-source GIS/Cesium projects. See [NOTICE.md](./NOTICE.md) for details.
 
 ## License
 
-MIT — freely use, modify, and distribute.
-
-## Author
-
-**SCAU-Algae** — [GitHub](https://github.com/SCAU-Algae)
-
----
-
-**Repository**: https://github.com/SCAU-Algae/GeoMoss-WebGIS
-**Live**: http://www.geomoss.top
+MIT. See the original upstream attribution and third-party notes in [NOTICE.md](./NOTICE.md).

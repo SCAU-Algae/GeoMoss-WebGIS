@@ -364,6 +364,13 @@ function selectMenu(menu) {
   }
 }
 
+function openAdminDashboard() {
+  if (!isAdmin.value) return
+  setOpen(false)
+  setFullscreen(false)
+  router.push({ name: 'admin-dashboard' })
+}
+
 function normalizePreferences(raw = {}) {
   const languageRaw = String(raw?.language || '').trim().toLowerCase().replace('_', '-')
   const language = languageRaw === 'en-us' ? 'en-US' : 'zh-CN'
@@ -663,10 +670,9 @@ onBeforeUnmount(() => {
             v-if="isAdmin"
             type="button"
             class="nav-tab"
-            :class="{ active: activeMenu === 'admin' }"
-            @click="selectMenu('admin')"
+            @click="openAdminDashboard"
           >
-            <i class="fas fa-database"></i> 管理
+            <i class="fas fa-chart-line"></i> 管理页
           </button>
           <button
             v-if="isAdmin"

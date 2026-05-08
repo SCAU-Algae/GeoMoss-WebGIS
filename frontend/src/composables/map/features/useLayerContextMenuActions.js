@@ -53,16 +53,11 @@ async function copyTextToClipboard(text) {
 export function useLayerContextMenuActions({
     layerInstances,
     getLayerConfigs,
-    customMapUrlRef,
     message
 }) {
     const resolveLayerSourceUrl = (layerId) => {
         const normalizedLayerId = String(layerId || '').trim();
         if (!normalizedLayerId) return '';
-
-        if (normalizedLayerId === 'custom' && customMapUrlRef?.value) {
-            return String(customMapUrlRef.value).trim();
-        }
 
         const fromInstance = extractSourceUrl(layerInstances?.[normalizedLayerId]?.getSource?.());
         if (fromInstance) return fromInstance;

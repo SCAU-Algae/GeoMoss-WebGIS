@@ -27,14 +27,6 @@
             重置链路
         </button>
 
-        <div v-if="selectedLayer === 'custom'" class="custom-url-wrapper">
-            <input v-model="customUrlInput" class="custom-url-input" placeholder="支持 XYZ / WMS / WMTS 服务 URL" />
-            <button class="custom-url-btn" @click="submitCustomUrl" title="加载">ok</button>
-            <div v-if="detectedServiceInfo" class="detected-format-hint">
-                ✓ 已识别: {{ detectedServiceInfo.name }}
-            </div>
-        </div>
-
         <Teleport to="body">
             <div v-if="showLayerManager" class="layer-manager-panel" :style="layerManagerPanelStyle">
                 <div class="panel-header">
@@ -92,7 +84,6 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { toLonLat } from 'ol/proj';
 import { apiSearchLocations } from '../api';
 import { BASEMAP_OPTIONS } from '../constants';
-import { detectCustomTileServiceKind } from '../composables/useTileSourceFactory';
 
 // ========== 异步导入子组件 ==========
 /** 地名搜索组件，支持多个服务源（天地图、国际、高德） */
@@ -106,7 +97,6 @@ const LocationSearch = defineAsyncComponent(() => import('./LocationSearch.vue')
  * @prop {Array} layerList - 当前图层列表，每项含 { id, name, visible }
  * @prop {Boolean} activeGraticule - 经纬网是否激活对象常用
  * @prop {String} selectedLayer - 当前选中底图的 ID
- * @prop {String} customMapUrl - 自定义 XYZ 底图 URL
  * @prop {String} tiandituTk - 天地图 Token
  * @prop {Boolean} isDomestic - 是否国内访问环境（用于服务推荐排序）
  * @prop {Array} services - 启用的地名检索服务列表（如 ['tianditu', 'nominatim']）
@@ -130,11 +120,7 @@ const props = defineProps({
     },
     selectedLayer: {
         type: String,
-        default: 'google'
-    },
-    customMapUrl: {
-        type: String,
-        default: ''
+        default: 'vector_amap_preset'
     },
     tiandituTk: {
         type: String,
@@ -151,7 +137,7 @@ const props = defineProps({
 });
 
 /**
- * @event change-layer 触发底图切换，payload: { layerId, source, customUrl? }
+ * @event change-layer 触发底图切换，payload: { layerId, source }
  * @event update-order 触发图层排序/显隐更新，payload: { type, dragIndex?, dropIndex?, layerId?, visible?, opacity? }
  * @event toggle-graticule 触发经纬网开关
  * @event search-jump 触发搜索结果定位，payload: { lng, lat, zoom, name, raw }
@@ -169,9 +155,7 @@ const emit = defineEmits([
 const layerManageButtonRef = ref(null);
 const showLayerManager = ref(false);
 const draggingIndex = ref(-1);
-const customUrlInput = ref(props.customMapUrl || '');
 const layerManagerAnchor = ref({ top: 0, left: 0 });
-const detectedServiceInfo = ref(null); // 检测到的服务类型信息
 const showLayerContextMenu = ref(false);
 const showUrlSubmenu = ref(false);
 const contextMenuLayer = ref(null);
@@ -222,26 +206,6 @@ const layerContextSubmenuStyle = computed(() => {
     };
 });
 
-watch(
-    () => props.customMapUrl,
-    (value) => {
-        customUrlInput.value = value || '';
-    }
-);
-
-/**
- * 监听自定义 URL 输入，实时检测服务类型
- */
-watch(customUrlInput, (newUrl) => {
-    if (!newUrl || !newUrl.trim()) {
-        detectedServiceInfo.value = null;
-        return;
-    }
-
-    const detected = detectCustomTileServiceKind(newUrl);
-    detectedServiceInfo.value = detected.kind === 'unknown' ? null : detected;
-});
-
 function handleLayerChange(event) {
     emit('change-layer', {
         layerId: event.target.value,
@@ -282,14 +246,6 @@ function fetchLocationResults({ service, keywords, page = 1, pageSize = 10 }) {
         tiandituTk: props.tiandituTk,
         mapBound: getCurrentMapBound()
     }).then((response) => response?.data || { items: [], total: 0 });
-}
-
-function submitCustomUrl() {
-    emit('change-layer', {
-        layerId: 'custom',
-        source: 'custom-url',
-        customUrl: customUrlInput.value
-    });
 }
 
 function onDragStart(evt, index) {
@@ -638,69 +594,6 @@ onBeforeUnmount(() => {
     white-space: nowrap;
 }
 
-.custom-url-wrapper {
-    flex-basis: 100%;
-    margin-top: 2px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.custom-url-input {
-    flex: 1;
-    min-width: 220px;
-    height: 30px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-subtle);
-    font-size: var(--font-size-xs);
-    background: rgba(5, 11, 10, 0.54);
-    color: var(--text-primary);
-    outline: none;
-    transition: all var(--duration-fast) var(--ease-spatial);
-}
-
-.custom-url-input:focus {
-    border-color: var(--border-active);
-    box-shadow: 0 0 0 3px rgba(71, 215, 198, 0.08);
-}
-
-.custom-url-input::placeholder {
-    color: var(--text-muted);
-}
-
-.custom-url-btn {
-    height: 30px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-active);
-    background: var(--neon-cyan-dim);
-    color: var(--neon-cyan);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    transition: all var(--duration-fast) var(--ease-spatial);
-}
-
-.custom-url-btn:hover {
-    background: rgba(71, 215, 198, 0.22);
-    box-shadow: var(--neon-cyan-glow);
-}
-
-.detected-format-hint {
-    margin-top: 0;
-    padding: 5px 8px;
-    background: var(--neon-green-dim);
-    border: 1px solid rgba(139, 209, 124, 0.24);
-    border-radius: var(--radius-sm);
-    color: var(--neon-green);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .layer-manage-btn {
     width: 32px;
     height: 32px;
@@ -778,7 +671,7 @@ onBeforeUnmount(() => {
     padding: 0;
     max-height: 300px;
     overflow-y: auto;
-    z-index: 2000;
+    z-index: 5600;
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
 }
@@ -872,7 +765,7 @@ onBeforeUnmount(() => {
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-elevated);
     padding: 4px;
-    z-index: 2100;
+    z-index: 6200;
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
 }
@@ -968,7 +861,7 @@ onBeforeUnmount(() => {
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-elevated);
     padding: 4px;
-    z-index: 2110;
+    z-index: 6210;
 }
 
 .submenu-arrow {

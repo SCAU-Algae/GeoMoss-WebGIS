@@ -2,8 +2,8 @@
     <div class="top-bar">
         <div class="branding">
             <a href="../index.html" class="logo-link">
-                <img :src="`${normalizedBase}images/icon.webp`" alt="Icon" class="logo-icon" />
-                <span class="title-text">The Science of Where！</span>
+                <img :src="`${normalizedBase}images/icon.webp`" alt="GeoMoss" class="logo-icon" />
+                <span class="title-text">GeoMoss</span>
             </a>
         </div>
 
@@ -18,9 +18,6 @@
                 <div v-if="showToolMenu" class="floating-menu">
                     <button class="menu-item" @click="handleOpenToolbox">
                         <layers-icon :size="16" class="m-icon" /> 图层管理
-                    </button>
-                    <button class="menu-item" @click="handleOpenCompass">
-                        <compass-icon :size="16" class="m-icon" /> 风水罗盘
                     </button>
                     <button class="menu-item" @click="handleOpenBusPlanner">
                         <bus-icon :size="16" class="m-icon" /> 公交规划
@@ -47,6 +44,13 @@
                     <CloudSunIcon :size="18" :stroke-width="2" />
                 </span>
                 <span class="btn-text">天气</span>
+            </button>
+
+            <button class="nav-btn" @click="handleOpenNews" title="热点资讯">
+                <span class="btn-icon">
+                    <newspaper-icon :size="18" :stroke-width="2" />
+                </span>
+                <span class="btn-text">资讯</span>
             </button>
 
             <button class="nav-btn" @click="handleOpenChat" title="AI 助手">
@@ -114,10 +118,8 @@ import { DEFAULT_BASEMAP_LAYER_INDEX } from '../constants';
 import {
     List as ListIcon,
     Layers as LayersIcon,
-    Compass as CompassIcon,
     Bus as BusIcon,
     Car as CarIcon,
-    Map as MapIcon,
     Smile as SmileIcon,
     Share2 as Share2Icon,
     Bot as BotIcon,
@@ -131,16 +133,13 @@ import {
     User as UserIcon,
     Moon as MoonIcon,
     Sun as SunIcon,
-    CloudSun as CloudSunIcon
+    CloudSun as CloudSunIcon,
+    Newspaper as NewspaperIcon
 } from 'lucide-vue-next';
 
 const themeButtonTitle = computed(() => props.theme === 'dark' ? '切换白色主题' : '切换黑色主题');
 
 const props = defineProps({
-    isWeatherBoardMode: {
-        type: Boolean,
-        default: false
-    },
     theme: {
         type: String,
         default: 'dark',
@@ -153,14 +152,13 @@ const emit = defineEmits([
     'activate-magic', // 发送特定的魔法特效
     'open-chat',
     'open-toolbox',
-    'open-compass',
     'open-bus',
     'open-drive',
-    'toggle-weather-board',
     'activate-feature',
     'toggle-account-center',
     'toggle-theme',
-    'open-weather'
+    'open-weather',
+    'open-news'
 ]);
 
 const showToolMenu = ref(false);
@@ -179,12 +177,6 @@ function handleOpenToolbox() {
     emit('open-toolbox');
 }
 
-function handleOpenCompass() {
-    showToolMenu.value = false;
-    emit('activate-feature', { key: 'compass', label: '风水罗盘' });
-    emit('open-compass');
-}
-
 function handleOpenBusPlanner() {
     showToolMenu.value = false;
     emit('activate-feature', { key: 'bus', label: '公交规划' });
@@ -197,15 +189,6 @@ function handleOpenDrivePlanner() {
     emit('open-drive');
 }
 
-function handleToggleWeatherBoard() {
-    showToolMenu.value = false;
-    emit('activate-feature', {
-        key: props.isWeatherBoardMode ? 'map' : 'weather-board',
-        label: props.isWeatherBoardMode ? '地图视图' : '天气看板'
-    });
-    emit('toggle-weather-board');
-}
-
 function handleOpenChat() {
     emit('activate-feature', { key: 'chat', label: 'AI助手' });
     emit('open-chat');
@@ -213,6 +196,11 @@ function handleOpenChat() {
 
 function handleOpenWeather() {
     emit('open-weather');
+}
+
+function handleOpenNews() {
+    emit('activate-feature', { key: 'info', label: '新闻' });
+    emit('open-news');
 }
 
 function handleToggleAccountCenter() {

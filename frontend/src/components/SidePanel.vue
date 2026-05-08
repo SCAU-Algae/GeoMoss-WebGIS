@@ -12,7 +12,7 @@
 
         <!-- 面板内容区域 -->
         <div class="panel-content" v-show="!isCollapsed"
-            :class="{ 'no-padding': activeTab === 'chat' || activeTab === 'toolbox' || activeTab === 'bus' || activeTab === 'drive' || activeTab === 'compass' }">
+            :class="{ 'no-padding': activeTab === 'chat' || activeTab === 'toolbox' || activeTab === 'bus' || activeTab === 'drive' }">
             <div class="active-feature-banner" v-if="activeFeature?.label">
                 当前激活功能：{{ activeFeature.label }}
             </div>
@@ -46,10 +46,7 @@
                     @draw-point-by-coordinates="$emit('draw-point-by-coordinates', $event)"
                     @draw-amap-aoi-from-json="$emit('draw-amap-aoi-from-json', $event)"
                     @toggle-layer-crs="$emit('toggle-layer-crs', $event)"
-                    @export-layer-data="$emit('export-layer-data', $event)"
-                    @upload-shp-3d="$emit('upload-shp-3d', $event)"
-                    @upload-3dtiles-zip="$emit('upload-3dtiles-zip', $event)"
-                    @load-3dtiles-url="$emit('load-3dtiles-url', $event)" />
+                    @export-layer-data="$emit('export-layer-data', $event)" />
             </div>
 
             <!-- 模式 3: 公交规划 -->
@@ -66,11 +63,6 @@
                     :draw-drive-route-on-map="drawDriveRouteOnMap" :zoom-to-drive-route-step="zoomToDriveRouteStep"
                     :preview-drive-route-step="previewDriveRouteStep"
                     :clear-drive-route-step-preview="clearDriveRouteStepPreview" @close="$emit('switch-tab', 'info')" />
-            </div>
-
-            <!-- 模式 5: 风水罗盘 -->
-            <div v-show="activeTab === 'compass'" class="toolbox-content">
-                <CompassControlPanel :get-user-location="getUserLocation" @close="$emit('switch-tab', 'info')" />
             </div>
 
             <!-- 模式 6: 天气看板 -->
@@ -156,7 +148,6 @@ import ChatPanelContent from './ChatPanelContent.vue';
 import ToolboxPanel from './TOCPanel.vue';
 import BusPlannerPanel from './BusPlannerPanel.vue';
 import DrivingPlannerPanel from './DrivingPlannerPanel.vue';
-import CompassControlPanel from './CompassControlPanel.vue';
 import WeatherChartPanel from './WeatherChartPanel.vue';
 
 // ========== 1. 新闻平台配置 ==========
@@ -198,7 +189,7 @@ const props = defineProps({
     },
     activeTab: {
         type: String,
-        default: 'info' // 'info' | 'chat' | 'toolbox' | 'bus' | 'drive' | 'compass'
+        default: 'info' // 'info' | 'chat' | 'toolbox' | 'bus' | 'drive'
     },
     isCollapsed: {
         type: Boolean,
@@ -227,10 +218,6 @@ const props = defineProps({
     activeFeature: {
         type: Object,
         default: () => ({ key: 'info', label: '新闻' })
-    },
-    getUserLocation: {
-        type: Function,
-        default: null
     },
     startBusPointPick: {
         type: Function,

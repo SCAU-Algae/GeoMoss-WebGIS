@@ -8,6 +8,11 @@ import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
 import XYZ from 'ol/source/XYZ';
 import VectorSource from 'ol/source/Vector';
+import GeoJSON from 'ol/format/GeoJSON';
+import { Draw } from 'ol/interaction.js';
+import { createBox } from 'ol/interaction/Draw.js';
+import { Circle as CircleGeom } from 'ol/geom';
+import { fromCircle as polygonFromCircle } from 'ol/geom/Polygon.js';
 
 let mapRuntimeDepsPromise = null;
 
@@ -25,7 +30,12 @@ const mapRuntimeDeps = {
     TileLayer,
     VectorLayer,
     XYZ,
-    VectorSource
+    VectorSource,
+    GeoJSON,
+    Draw,
+    createBox,
+    CircleGeom,
+    polygonFromCircle
 };
 
 /**

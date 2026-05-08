@@ -152,8 +152,8 @@ export function useMapState(mapInstance, options = {}) {
         layerInstances = null,
         layerConfigs = null,
         resolveVisibleLayerIds = null,
-        satelliteLayers = ['tianDiTu', 'Google', 'esri', 'google'],
-        vectorLayers = ['tianDiTu_vec']
+        satelliteLayers = ['imagery_tianditu'],
+        vectorLayers = ['vector_tianditu']
     } = options;
 
     let moveEndKey = null;
@@ -752,30 +752,30 @@ export function useMapState(mapInstance, options = {}) {
             // 若解析结果未匹配任何图层，则退回到单图层切换模式。
             if (matchedCount === 0) {
                 layerList.forEach((item) => {
-                    if (item.id === 'label' || item.id === 'label_vector') return;
+                    if (item.id === 'label_tianditu' || item.id === 'label_tianditu_vector') return;
                     item.visible = item.id === layerId;
                 });
 
                 const needsSatelliteLabel = satelliteIds.includes(layerId);
-                const labelItem = layerList.find((item) => item.id === 'label');
+                const labelItem = layerList.find((item) => item.id === 'label_tianditu');
                 if (labelItem) labelItem.visible = needsSatelliteLabel;
 
                 const needsVectorLabel = vectorIds.includes(layerId);
-                const vectorLabelItem = layerList.find((item) => item.id === 'label_vector');
+                const vectorLabelItem = layerList.find((item) => item.id === 'label_tianditu_vector');
                 if (vectorLabelItem) vectorLabelItem.visible = needsVectorLabel;
             }
         } else {
             layerList.forEach((item) => {
-                if (item.id === 'label' || item.id === 'label_vector') return;
+                if (item.id === 'label_tianditu' || item.id === 'label_tianditu_vector') return;
                 item.visible = item.id === layerId;
             });
 
             const needsSatelliteLabel = satelliteIds.includes(layerId);
-            const labelItem = layerList.find((item) => item.id === 'label');
+            const labelItem = layerList.find((item) => item.id === 'label_tianditu');
             if (labelItem) labelItem.visible = needsSatelliteLabel;
 
             const needsVectorLabel = vectorIds.includes(layerId);
-            const vectorLabelItem = layerList.find((item) => item.id === 'label_vector');
+            const vectorLabelItem = layerList.find((item) => item.id === 'label_tianditu_vector');
             if (vectorLabelItem) vectorLabelItem.visible = needsVectorLabel;
         }
 

@@ -652,6 +652,75 @@ export async function apiAdminUpdateContact(contact) {
   return backendAPI.post('/api/admin/config/contact', { contact })
 }
 
+export async function apiAdminListBoundaryDatasets() {
+  return backendAPI.get('/api/admin/geodata/boundaries')
+}
+
+export async function apiAdminPreviewBoundaryDataset(file, onUploadProgress) {
+  const formData = new FormData()
+  const files = Array.isArray(file) ? file : Array.from(file ? [file] : [])
+  files.forEach(item => formData.append('files', item))
+  return backendAPI.post('/api/admin/geodata/boundaries/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+    onUploadProgress
+  })
+}
+
+export async function apiAdminConfirmBoundaryDataset(payload) {
+  return backendAPI.post('/api/admin/geodata/boundaries/confirm', payload)
+}
+
+export async function apiAdminDeleteBoundaryDataset(datasetId) {
+  return backendAPI.delete(`/api/admin/geodata/boundaries/${encodeURIComponent(datasetId)}`)
+}
+
+export async function apiAdminListThreeDLayers() {
+  return backendAPI.get('/api/admin/geodata/3d/layers')
+}
+
+export async function apiAdminPreviewThreeDSource(file, onUploadProgress) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return backendAPI.post('/api/admin/geodata/3d/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 0,
+    onUploadProgress
+  })
+}
+
+export async function apiAdminCreateThreeDLayer(payload) {
+  return backendAPI.post('/api/admin/geodata/3d/layers', payload)
+}
+
+export async function apiAdminUpdateThreeDLayerStatus(layerId, status) {
+  return backendAPI.post(`/api/admin/geodata/3d/layers/${encodeURIComponent(layerId)}/status`, { status })
+}
+
+export async function apiAdminDeleteThreeDLayer(layerId) {
+  return backendAPI.delete(`/api/admin/geodata/3d/layers/${encodeURIComponent(layerId)}`)
+}
+
+export async function apiAdminListGeodataJobs(limit = 20) {
+  return backendAPI.get('/api/admin/geodata/jobs', { params: { limit } })
+}
+
+export async function apiAdminGetGeodataJob(jobId) {
+  return backendAPI.get(`/api/admin/geodata/jobs/${encodeURIComponent(jobId)}`)
+}
+
+export async function apiAdminCancelGeodataJob(jobId) {
+  return backendAPI.post(`/api/admin/geodata/jobs/${encodeURIComponent(jobId)}/cancel`)
+}
+
+export async function apiAdminListTerrainLayers() {
+  return backendAPI.get('/api/terrain/admin/layers')
+}
+
+export async function apiAdminPublishGuangdongDem() {
+  return backendAPI.post('/api/terrain/admin/guangdong-dem', {}, { timeout: 0 })
+}
+
 /**
  * ========== API 管理接口 ==========
  */

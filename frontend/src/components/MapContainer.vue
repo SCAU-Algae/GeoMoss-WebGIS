@@ -1,7 +1,5 @@
 <template>
-    <div id="map-container" class="map-container"
-        :class="{ 'compass-placement-mode': compassStore.enabled && compassStore.mode === 'vector' && compassStore.placementMode }"
-        ref="mapContainerRef">
+    <div id="map-container" class="map-container" ref="mapContainerRef">
         <div id="map" ref="mapRef"></div>
 
         <!-- Map Swipe Controller -->
@@ -14,7 +12,7 @@
         @open-large-image="handleEasterEggImageOpen" @location-change="handleEasterEggLocationChange" />
 
         <LayerControlPanel :map-instance="mapInstance" :layer-list="layerList" :selected-layer="selectedLayer"
-            :custom-map-url="customMapUrl" :active-graticule="showDynamicSplitLines"
+            :active-graticule="showDynamicSplitLines"
             :basemap-circuit-open="basemapCircuitOpen" :tianditu-tk="TIANDITU_TK" :is-domestic="isDomestic"
             @change-layer="handleLayerChange" @update-order="handleLayerOrderUpdate"
             @toggle-graticule="handleToggleGraticule" @search-jump="handleSearchJump"
@@ -22,14 +20,6 @@
 
         <AttributeTable @focus-feature="handleAttributeTableFocusFeature"
             @highlight-feature="handleAttributeTableHighlightFeature" />
-
-        <div v-if="compassStore.hudVisible" class="compass-hud-wrapper" :style="{ opacity: compassStore.opacity }">
-            <FengShuiCompassSvg :config="compassStore.hudRenderConfig" />
-        </div>
-
-        <!-- 风水宫位解释面板 -->
-        <PalaceExplanationPanel :selected-palace="selectedPalace" :theme-config="compassStore.config"
-            @close="handleCloseExplanation" />
 
         <!-- 底部控制栏 -->
         <MapControlsBar :coordinate="currentCoordinate" :current-zoom="currentZoom" @reset-view="resetView"
@@ -76,6 +66,7 @@ import {
     createMapEventHandlers,
     createMapSearchAndCoordinateInputFeature,
     createMapUIEventHandlers,
+    createOverviewBasemapControl,
     createRightDragZoomController,
     createRouteRenderingFeature,
     createRouteStepInteraction,
@@ -83,14 +74,12 @@ import {
     createStartupTaskSchedulerFeature,
     createUserLayerApiFacadeFeature
 } from '../composables/map';
-import { prioritizeTileSourceRequest } from '../composables/useTileSourceFactory';
 import {
     DEFAULT_BASEMAP_PRESET_ID,
     URL_LAYER_OPTIONS,
-    activeGoogleTileHost as globalActiveGoogleTileHost,
-    resolvePreferredGoogleHost,
     createLayerConfigs,
     resolvePresetLayerIds,
+    resolveOverviewLayerIds,
     getBasemapOptionLabel,
     getLayerCategory as getLayerCategoryById,
     getLayerGroup as getLayerGroupById,
@@ -100,29 +89,23 @@ import {
     AMAP_EXTRACT_AOI_STYLE,
     createMapStylesObject
 } from '../constants';
-import { createAutoTileSourceFromUrl } from '../composables/useTileSourceFactory';
 import LayerControlPanel from './LayerControlPanel.vue';
 import MapSwipeController from './MapSwipeController.vue';
 // import MapEasterEgg from './MapEasterEgg.vue';
 import MapControlsBar from './MapControlsBar.vue';
 import AttributeTable from './AttributeTable.vue';
-import FengShuiCompassSvg from './feng-shui-compass-svg/feng-shui-compass-svg.vue';
-import PalaceExplanationPanel from './PalaceExplanationPanel.vue';
 import { apiReverseGeocodeWithFallback } from '../api';
-import { useAttrStore, useUrlParamStore, useCompassStore, useTOCStore, useLayerStore } from '../stores';
-import { CompassManager } from '../services/CompassManager';
+import { useAttrStore, useUrlParamStore, useTOCStore, useLayerStore } from '../stores';
 import { DistrictManager } from '../services/DistrictManager';
 
 const message = useMessage();
 const attrStore = useAttrStore();
 const urlParamStore = useUrlParamStore();
-const compassStore = useCompassStore();
 const tocStore = useTOCStore();
 const layerStore = useLayerStore();
 
 // ========== Map Swipe Setup ==========
 const SWIPE_COMPARE_LAYER_PREFIX = '__swipe_compare_layer__';
-const SWIPE_UNSUPPORTED_PRESETS = new Set(['custom', 'local_tiles_preset']);
 
 function resolveSwipeLayerIds(presetId) {
     const layerIds = resolvePresetLayerIds(presetId).filter((id) => {
@@ -137,13 +120,7 @@ function createSwipeSourceByLayerId(layerId) {
     const layerConfig = LAYER_CONFIGS.find((cfg) => cfg.id === layerId);
     if (!layerConfig) return null;
 
-    const layerFactoryContext = {
-        normBase: NORM_BASE,
-        tiandituTk: TIANDITU_TK,
-        customUrl: customMapUrl.value || ''
-    };
-
-    return layerConfig.createSource?.(layerFactoryContext) || null;
+    return layerConfig.createSource?.() || null;
 }
 
 function clearSwipeCompareLayers() {
@@ -201,12 +178,6 @@ async function enableBasemapSwipe(config = {}) {
 
     if (!leftBasemapId || !rightBasemapId) {
         throw new Error('左右底图 ID 不能为空');
-    }
-
-    if (SWIPE_UNSUPPORTED_PRESETS.has(leftBasemapId) || SWIPE_UNSUPPORTED_PRESETS.has(rightBasemapId)) {
-        const errorMsg = '不支持的底图类型。卷帘分析仅支持标准在线底图，请选择其他底图选项。';
-        message.error(errorMsg);
-        throw new Error(errorMsg);
     }
 
     try {
@@ -321,14 +292,6 @@ const {
 
 const mapContainerRect = ref(null);
 
-const store = useCompassStore();
-const selectedPalace = computed(() => store.selectedPalace);
-
-// 关闭宫位解释面板
-const handleCloseExplanation = () => {
-    store.setSelectedPalace(null);
-};
-
 // ========== Map Swipe Event Handlers ==========
 function handleSwipePositionUpdate(position) {
     layerStore.updateSwipePosition(position);
@@ -348,11 +311,9 @@ function handleSwipeClose() {
 }
 
 // ========== 底图管理 Composable ==========
-// 集中管理底图配置、底图选项列表、Google 主机选择等逻辑
+// 集中管理底图配置与 URL 参数中的底图索引映射。
 // URL_LAYER_OPTIONS：用于 URL 参数中的图层索引映射（与 BASEMAP_OPTIONS 对应）
 // createLayerConfigs：工厂函数，根据参数生成全部底图源配置
-// 使用全局共享的 Google 主机 ref，支持主机切换后的动态更新
-const activeGoogleTileHost = globalActiveGoogleTileHost;
 
 // OpenLayers 运行时依赖按需动态加载，避免进入登录页首屏预加载图。
 const {
@@ -368,8 +329,12 @@ const {
     isExtentEmpty,
     TileLayer,
     VectorLayer,
-    XYZ,
-    VectorSource
+    VectorSource,
+    GeoJSON,
+    Draw,
+    createBox,
+    CircleGeom,
+    polygonFromCircle
 } = await loadMapRuntimeDeps();
 
 import { gcj02ToWgs84, wgs84ToGcj02 } from '../utils/geo';
@@ -379,8 +344,6 @@ import {
 } from '../utils/layerExportService';
 
 // --- 配置常量 ---
-const BASE_URL = import.meta.env.BASE_URL || '/';
-const NORM_BASE = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 const INITIAL_VIEW = { center: [113.351948, 23.160345], zoom: 17 }; // 华南农业大学
 const CRITICAL_TILE_READY_TIMEOUT_MS = 3000; // 首屏关键瓦片加载超时时间（毫秒）
 
@@ -393,7 +356,7 @@ const TIANDITU_TK = import.meta.env.VITE_TIANDITU_TK;
 // const IMAGES = [
 //     '地理与环境学院标志牌.webp', '地理与环境学院入口.webp', '地学楼.webp',
 //     '教育部重点实验室.webp', '四楼逃生图.webp', '学院楼单侧.webp'
-// ].map(img => `${NORM_BASE}images/${img}`);
+// ].map(img => `/images/${img}`);
 
 // --- Refs ---
 const mapContainerRef = ref(null);
@@ -404,11 +367,11 @@ const mapInstance = shallowRef(null); // 使用 shallowRef 优化性能
 // 当前选中的底图 ID 统一由 DEFAULT_BASEMAP_PRESET_ID 控制。
 // 与 useMapState 中的 parseUrlToState 默认值保持一致
 const selectedLayer = ref(DEFAULT_BASEMAP_PRESET_ID);
-const customMapUrl = ref('');
 const showDynamicSplitLines = ref(false);
 const basemapCircuitOpen = ref(false);
 const currentZoom = ref(17); // 当前缩放级别
 const currentCoordinate = ref(null);
+let pendingStudyAreaDrawRef = null;
 
 const isDomestic = ref(true); // 是否为国内用户（基于 IP 判断）
 let fitToLonLatExtentByMapState = () => false;
@@ -469,9 +432,17 @@ async function resolveSharedAddressByLonLat(lng, lat) {
 
 let searchSource, searchLayer;
 
+function cancelPendingStudyAreaDraw(reason = '风水研究范围框选已取消') {
+    if (!pendingStudyAreaDrawRef) return;
+    const pending = pendingStudyAreaDrawRef;
+    pendingStudyAreaDrawRef = null;
+    pending.cleanup?.();
+    pending.reject?.(new Error(reason));
+}
+
 // ========== 图层配置初始化 ==========
 // 使用 composable 提供的工厂函数而不是直接定义 LAYER_CONFIGS
-const LAYER_CONFIGS = createLayerConfigs(NORM_BASE, TIANDITU_TK);
+const LAYER_CONFIGS = createLayerConfigs(TIANDITU_TK);
 
 // 初始化图层列表状态 (从配置生成)
 const layerList = ref(LAYER_CONFIGS.map(cfg => ({
@@ -485,7 +456,6 @@ const layerInstances = {}; // 存储所有 TileLayer 实例
 const { handleLayerContextAction } = useLayerContextMenuActions({
     layerInstances,
     getLayerConfigs: () => LAYER_CONFIGS,
-    customMapUrlRef: customMapUrl,
     message
 });
 
@@ -493,7 +463,10 @@ const {
     validateBaseLayerSwitch,
     createBaseLayerFallbackManager,
     monitorLayerTimeout
-} = createBasemapResilience({ message });
+} = createBasemapResilience({
+    message,
+    fallbackOptions: URL_LAYER_OPTIONS
+});
 
 const {
     initializeBasemapLayers
@@ -514,12 +487,10 @@ const pendingReverseGeocodePickRef = ref(null);
 let busRouteLayerRef = null;
 const busRouteManagedLayerIdRef = ref(null);
 let rightDragZoomController = null;
-let compassManagerRef = null;
 let districtManagerRef = null;
 
-// 图层引用
-let baseLayer, labelLayer;
 const drawSource = new VectorSource();
+const studyAreaSource = new VectorSource();
 const userLocationSource = new VectorSource();
 const busPickSource = new VectorSource();
 const busRouteSource = new VectorSource();
@@ -557,6 +528,7 @@ const {
 const isAttributeQueryEnabled = ref(true);
 const userDataLayers = [];
 let drawLayerInstance = null;
+let studyAreaLayerInstance = null;
 let tooltipRef = {
     helpTooltipEl: null,
     helpTooltipOverlay: null
@@ -576,6 +548,13 @@ const {
 });
 
 const drawStyleConfig = ref({ ...STYLE_TEMPLATES.classic });
+const STUDY_AREA_STYLE = {
+    fillColor: '#47d7c6',
+    fillOpacity: 0.18,
+    strokeColor: '#47d7c6',
+    strokeWidth: 2,
+    pointRadius: 6
+};
 
 // 托管图层样式系统已下沉到 feature 库，MapContainer 仅负责注入与调用。
 const {
@@ -776,32 +755,23 @@ const {
 
 // 底图状态管理
 const {
-    emitBaseLayersChange,
-    emitBaseLayersChangeBatched,
-    refreshGoogleLayerSources
+    emitBaseLayersChangeBatched
 } = createBasemapStateManagementFeature({
     layerList,
     selectedLayer,
     getLayerCategory: getLayerCategoryById,
     getLayerGroup: getLayerGroupById,
-    emit,
-    LAYER_CONFIGS,
-    layerInstances
+    emit
 });
 
-// 图层控制面板事件（切换/排序/自定义 URL）
+// 图层控制面板事件（切换/排序）
 const {
-    loadCustomMap,
     handleLayerChange,
     handleLayerOrderUpdate
 } = createLayerControlHandlers({
     selectedLayerRef: selectedLayer,
-    customMapUrlRef: customMapUrl,
     layerListRef: layerList,
-    layerInstances,
-    refreshLayersState,
-    createAutoTileSourceFromUrl,
-    message
+    refreshLayersState
 });
 
 // 栅格值查询函数的 ref 包装（用于延迟初始化）
@@ -913,7 +883,6 @@ const {
     message,
     defaultLayerId: DEFAULT_BASEMAP_PRESET_ID,
     validationTimeoutMs: 3000,
-    switchDebounceMs: 300,
     circuitBreakThreshold: 3,
     onCircuitBreak: () => {
         basemapCircuitOpen.value = true;
@@ -921,6 +890,17 @@ const {
     onCircuitReset: () => {
         basemapCircuitOpen.value = false;
     }
+});
+
+const {
+    createControl: createOverviewMapControl,
+    dispose: disposeOverviewMapControl
+} = createOverviewBasemapControl({
+    selectedLayerRef: selectedLayer,
+    layerConfigs: LAYER_CONFIGS,
+    resolveOverviewLayerIds,
+    OverviewMapClass: OverviewMap,
+    TileLayerClass: TileLayer
 });
 
 function handleResetBasemapChain() {
@@ -1002,7 +982,7 @@ function getInitialViewState() {
 //   3. waitForCriticalTileReady() - 等待底图 rendercomplete 或 3s 超时
 //   4. emit('map-core-ready') - 通知父组件地图核心就绪
 //   5. applyDeferredUrlParams() - 延后到底图加载稳定后，避免打断瓦片加载
-//   6. runDeferredStartupTasks() - 所有非关键任务（Google 测速、定位等）在最后执行
+//   6. runDeferredStartupTasks() - 所有非关键任务（定位、欢迎消息等）在最后执行
 onMounted(async () => {
     componentUnmountedRef.value = false;
     try {
@@ -1048,7 +1028,7 @@ onMounted(async () => {
         }
 
         // ========== Phase 6: 执行所有非关键初始化任务 ==========
-        // Google 主机测速、用户定位、IP 定位等都延后到这里
+        // 用户定位、IP 定位等都延后到这里
         // 使用 scheduleLowPriorityTask 确保在浏览器空闲时执行
         scheduleLowPriorityTask(() => {
             runDeferredStartupTasks().catch(() => { });
@@ -1064,9 +1044,8 @@ onMounted(async () => {
 
 // [隶属] 启动流程-后期初始化
 // [作用] 在底图加载完成、URL 参数已应用后执行所有非关键任务。
-//        这包括：Google 主机测速、用户定位、IP 定位等。
+//        这包括：欢迎消息、用户定位、IP 定位等。
 // [优先级] 这些任务不影响首屏交互性，可在浏览器空闲时执行。
-// [并行策略] Google 主机测速与用户定位可并行执行（不相互依赖）
 async function runDeferredStartupTasks() {
     if (componentUnmountedRef.value) return;
 
@@ -1079,32 +1058,19 @@ async function runDeferredStartupTasks() {
         message.success(`分享地点：${shareAddress || '地址解析失败，请稍后重试'}`, { duration: 3000 });
         message.soup();//鸡汤问候
     } else {
-        message.success('欢迎使用GeoMoss的WebGIS!(V3.0.5)', { duration: 3000 });
+        message.success('欢迎使用 GeoMoss WebGIS v3.1.0', { duration: 3000 });
     }
-
-    // ========== 并行执行：Google 主机测速（非阻塞） ==========
-    // 注意：这里使用 Promise 而不是 await，避免阻塞后续定位逻辑
-    resolvePreferredGoogleHost().then((host) => {
-        if (componentUnmountedRef.value) return;
-        if (!host || host === activeGoogleTileHost.value) return;
-        activeGoogleTileHost.value = host;
-        refreshGoogleLayerSources();
-    }).catch(() => { });
 
     // ========== 用户定位 ==========
     // 分享进入时静默定位且不跳转视图，仅用于更新定位上下文与 URL 参数。
     const locatedResult = isSharedEntry
         ? await zoomToUser({ animate: false, silent: true })
-        : await zoomToUser();
+        : await zoomToUser({ animate: false, silent: true });
     if (componentUnmountedRef.value) return;
 
     // 若主动定位完全失败，则仅补一次国内外判定，避免状态缺失。
     if (!locatedResult) {
-        if (isSharedEntry) {
-            await detectIPLocale({ silent: true });
-        } else {
-            await detectIPLocale();
-        }
+        await detectIPLocale({ silent: true });
     }
 }
 
@@ -1182,8 +1148,7 @@ onUnmounted(() => {
     mapResizeObserver = null;
     districtManagerRef?.dispose?.();
     districtManagerRef = null;
-    compassManagerRef?.dispose?.();
-    compassManagerRef = null;
+    disposeOverviewMapControl();
     rightDragZoomController?.dispose?.();
     clearRouteStepStyleCache?.();
     rightDragZoomController = null;
@@ -1196,6 +1161,7 @@ onUnmounted(() => {
         pendingReverseGeocodePickRef.value.reject(new Error('地图已卸载'));
         pendingReverseGeocodePickRef.value = null;
     }
+    cancelPendingStudyAreaDraw('地图已卸载');
     if (mapInstance.value) mapInstance.value.setTarget(null);
 });
 
@@ -1284,6 +1250,11 @@ function initMap() {
         style: createStyleFromConfig(drawStyleConfig.value),
         zIndex: 999
     });
+    studyAreaLayerInstance = new VectorLayer({
+        source: studyAreaSource,
+        style: createStyleFromConfig(STUDY_AREA_STYLE),
+        zIndex: 1095
+    });
     const userLayer = new VectorLayer({
         source: userLocationSource,
         zIndex: 1000,
@@ -1336,48 +1307,18 @@ function initMap() {
     });
 
     // 1.3 控件
-    // 从 LAYER_CONFIGS 中获取 Google 配置，使鹰眼视图与坐标系保持一致
-    const controls = defaultControls({ zoom: false }).extend([
-        // new ScaleLine({ 
-        //     units: 'metric',
-        //     bar: true, 
-        //     minWidth: 100 ,
-        //     // className: 'ol-scaleline'//绑定类名，控制css
-        // }),
-
-        // 鹰眼视图控件 - 使用 默认底图动态引用，保持 URL 一致
-        //bug：待修复,临时使用
-        new OverviewMap({
-            className: 'ol-overviewmap ol-custom-overviewmap',
-            //原始逻辑，直接使用Google，但是不稳定，容易崩
-            //切换为稳定的天地图
-            // layers: [
-            //     new TileLayer({
-            //         source: googleConfig ? googleConfig.createSource() : new XYZ({
-            //             url: buildGoogleTileUrl('/maps/vt?lyrs=s&x={x}&y={y}&z={z}'),
-            //             maxZoom: 20
-            //         })
-            // })
-            // ],
-            layers: [
-                new TileLayer({
-                    source: prioritizeTileSourceRequest(new XYZ({
-                        url: 'https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=4267820f43926eaf808d61dc07269beb',
-                        maxZoom: 20
-                    }))
-                })
-            ],
-            collapseLabel: '«',
-            label: '»',
-            collapsed: false
-        })
-    ]);
+    const overviewMapControl = createOverviewMapControl(selectedLayer.value);
+    const mapControls = [];
+    if (overviewMapControl) {
+        mapControls.push(overviewMapControl);
+    }
+    const controls = defaultControls({ zoom: false }).extend(mapControls);
 
     // 1.4 实例化地图
     const initialViewState = getInitialViewState();
     mapInstance.value = new Map({
         target: mapRef.value,
-        layers: [...layersToAdd, drawLayerInstance, userLayer, busRouteLayer, busPickLayer, searchLayer],
+        layers: [...layersToAdd, drawLayerInstance, userLayer, busRouteLayer, busPickLayer, studyAreaLayerInstance, searchLayer],
         view: new View({
             center: fromLonLat(initialViewState.center),
             zoom: initialViewState.zoom,
@@ -1396,14 +1337,6 @@ function initMap() {
     mapInstance.value.addControl(scaleline);
 
     currentZoom.value = Number(mapInstance.value.getView()?.getZoom?.() ?? initialViewState.zoom);
-
-    compassManagerRef?.dispose?.();
-    compassManagerRef = new CompassManager({
-        map: mapInstance.value,
-        store: compassStore,
-        mapContainerElement: mapContainerRef.value
-    });
-    void compassManagerRef.init();
 
     // 1.4.5 初始化坐标显示 - 从视图中心获取坐标，处理移动端初始化
     const initialCenter = mapInstance.value.getView().getCenter();
@@ -1454,6 +1387,76 @@ function startBusPointPick(type) {
 
     return new Promise((resolve, reject) => {
         pendingBusPickRef.value = { type: pickType, resolve, reject };
+    });
+}
+
+function startStudyAreaDraw(drawType = 'Polygon') {
+    if (!mapInstance.value || !studyAreaSource) {
+        return Promise.reject(new Error('地图尚未初始化'));
+    }
+
+    clearDrawMeasureInteractions();
+    cancelPendingStudyAreaDraw('上一次框选已取消');
+
+    const normalizedType = String(drawType || 'Polygon');
+    const options = normalizedType === 'Rectangle'
+        ? { source: studyAreaSource, type: 'Circle', geometryFunction: createBox() }
+        : { source: studyAreaSource, type: normalizedType === 'Circle' ? 'Circle' : 'Polygon' };
+
+    return new Promise((resolve, reject) => {
+        const interaction = new Draw({
+            ...options,
+            style: createStyleFromConfig(STUDY_AREA_STYLE)
+        });
+
+        const cleanup = () => {
+            try {
+                mapInstance.value?.removeInteraction(interaction);
+            } catch {}
+            if (pendingStudyAreaDrawRef?.interaction === interaction) {
+                pendingStudyAreaDrawRef = null;
+            }
+        };
+
+        pendingStudyAreaDrawRef = { interaction, reject, cleanup };
+        interaction.on('drawstart', () => {
+            studyAreaSource.clear();
+        });
+        interaction.on('drawend', (event) => {
+            try {
+                let feature = event.feature;
+                let geometry = feature.getGeometry();
+                if (geometry instanceof CircleGeom) {
+                    geometry = polygonFromCircle(geometry, 96);
+                    feature.setGeometry(geometry);
+                }
+                const geojson = new GeoJSON().writeFeatureObject(feature, {
+                    featureProjection: 'EPSG:3857',
+                    dataProjection: 'EPSG:4326'
+                });
+                geojson.properties = {
+                    ...(geojson.properties || {}),
+                    source: 'fengshui-study-area',
+                    drawType: normalizedType
+                };
+                const extent = geometry.getExtent();
+                const [minLon, minLat] = toLonLat([extent[0], extent[1]]);
+                const [maxLon, maxLat] = toLonLat([extent[2], extent[3]]);
+                const center = toLonLat([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]);
+                resolve({
+                    geojson,
+                    bbox: [minLon, minLat, maxLon, maxLat],
+                    center: { lon: center[0], lat: center[1] }
+                });
+            } catch (error) {
+                reject(error);
+            } finally {
+                cleanup();
+            }
+        });
+
+        mapInstance.value.addInteraction(interaction);
+        message.info('请在地图上框选风水分析研究范围');
     });
 }
 
@@ -1583,6 +1586,7 @@ function zoomToGraphics() {
 // [交互] 对外 emit(feature-selected/graphics-overview) 并被父组件工具箱调用。
 function activateInteraction(type) {
     clearDrawMeasureInteractions();
+    cancelPendingStudyAreaDraw('风水研究范围框选已取消');
     if (!mapInstance.value) return;
 
     if (type !== 'ReverseGeocodePick' && pendingReverseGeocodePickRef.value?.reject) {
@@ -1694,6 +1698,7 @@ function removeDistrictLayer(adcode) {
 // [交互] 被 activateInteraction 与外部调用复用。
 function clearInteractions() {
     clearDrawMeasureInteractions();
+    cancelPendingStudyAreaDraw('风水研究范围框选已取消');
 }
 
 // 初始化图层导出服务并包装为适配本组件的调用方式
@@ -1719,6 +1724,7 @@ defineExpose({
     locateAddress,
     addUserDataLayer,
     activateInteraction,
+    startStudyAreaDraw,
     clearInteractions,
     getCurrentLocation,
     startBusPointPick,
@@ -1771,21 +1777,6 @@ defineExpose({
     width: 100%;
     height: 100%;
 }
-
-.compass-hud-wrapper {
-    position: absolute;
-    right: 18px;
-    bottom: 18px;
-    z-index: 1210;
-    pointer-events: none;
-    transform: translateZ(0);
-}
-
-.map-container.compass-placement-mode :deep(#map),
-.map-container.compass-placement-mode #map {
-    cursor: crosshair;
-}
-
 
 /* OpenLayers Tooltips Override */
 :deep(.ol-tooltip) {

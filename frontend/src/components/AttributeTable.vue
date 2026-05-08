@@ -516,7 +516,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/** GIS 主题控制配色映射：以截图中The Science of Where标准绿色和GIS专业应用为原形搭配色块 **/
+/** GIS 主题控制配色映射：以 GeoMoss 品牌和 GIS 专业应用为原形搭配色块 **/
 :root {
     --arc-pro-bg: #fefefe;
     --arc-pro-panel-base: #f0f3f2;

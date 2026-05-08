@@ -40,7 +40,7 @@
 - `useUserLayerApiFacade.js`
   - 职责：用户图层 API 委托门面、动态加载与缓存管理。
 - `useBasemapStateManagement.js`
-  - 职责：底图状态广播、Google 图层源刷新。
+  - 职责：底图状态广播与批量事件合并。
 - `useManagedFeatureOperations.js`
   - 职责：托管图层要素查找与缩放操作。
 - `useMapEventHandlers.js` ⭐ **Phase 17 - NEW**
@@ -51,13 +51,15 @@
 - `useCreateManagedVectorLayer.js`
   - 职责：托管矢量图层创建工厂（样式归一、要素序列化、注册、可选 fitView）。
 - `useLayerControlHandlers.js`
-  - 职责：图层面板事件处理（切换、排序、透明度、自定义底图 URL 识别与落图）。
+  - 职责：图层面板事件处理（切换、排序、透明度）。
 - `useDeferredUserLayerApis.js`
   - 职责：用户图层延迟 API 门面（动态导入 useLayerDataImport/useUserLayerActions、动作代理）。
 - `useBasemapSelectionWatcher.js`
   - 职责：底图切换监听与可用性校验，默认底图失败时自动兜底切换。
 - `useBasemapLayerBootstrap.js`
   - 职责：底图层初始化与首屏监控挂载（创建 TileLayer、监控回调接入、图层实例映射）。
+- `useOverviewBasemapControl.js`
+  - 职责：鹰眼视图底图控制，复用底图注册表并随当前底图预设切换。
 
 ## 约束
 

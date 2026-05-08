@@ -1,8 +1,14 @@
 node_modules/
 dist/
-__pycache__/
-*.pyc
-*.log
 .env
 .env.local
 .env.production
+*.pyc
+__pycache__/
+.DS_Store
+backend/data/3dtiles/_uploads/
+backend/data/3dtiles/*/
+backend/.vite/
+.vite/
+*.log
+/tmp/

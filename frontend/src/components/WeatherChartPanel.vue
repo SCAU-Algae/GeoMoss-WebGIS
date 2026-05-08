@@ -1,5 +1,5 @@
 <template>
-    <div class="weather-panel" :class="{ 'wx-fullscreen': wxExpanded }">
+    <div ref="panelRef" class="weather-panel" :class="{ 'wx-fullscreen': wxExpanded }">
         <div class="weather-toolbar">
             <div class="weather-toolbar-left">
                 <h2 class="weather-title">GeoMoss 天气看板</h2>
@@ -98,20 +98,14 @@ import { useWeatherStore } from '../stores';
 
 const message = useMessage();
 const weatherStore = useWeatherStore();
-const TIANDITU_TK = import.meta.env.VITE_TIANDITU_TK || '';
 
 const adcodeInput = ref(weatherStore.currentAdcode || '410202');
-const cityInput = ref('');
 const isBusy = ref(false);
 const liveWeather = ref(null);
 const forecastWeather = ref(null);
 const geoInfo = ref({ district: '', city: '', province: '' });
 const lastWeatherCoords = ref(null);  // {lon, lat}
 const wxExpanded = ref(false);  // fullscreen toggle
-const baseApiMeta = ref({ status: '--', count: '--', info: '--', infocode: '--' });
-const forecastApiMeta = ref({ status: '--', count: '--', info: '--', infocode: '--' });
-const baseRawPayload = ref(null);
-const forecastRawPayload = ref(null);
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1366);
 
 const isMobile = computed(() => viewportWidth.value <= 768);
@@ -119,14 +113,15 @@ const isCompact = computed(() => viewportWidth.value <= 1100);
 
 const trendChartRef = ref(null);
 const windChartRef = ref(null);
+const panelRef = ref(null);
 
 let echartsModule = null;
 let echartsRuntimePromise = null;
 let trendChart = null;
 let windChart = null;
-let lastWeatherRequestId = 0;
-let lastLoadedAdcode = '';
 let resizeDebounceTimer = null;
+let panelResizeObserver = null;
+let panelResizeFrame = 0;
 
 function loadEchartsRuntime() {
     if (echartsRuntimePromise) return echartsRuntimePromise;
@@ -272,9 +267,6 @@ const liveWindDirectionText = computed(() => String(liveWeather.value?.windDirec
 const liveWindPowerText = computed(() => String(liveWeather.value?.windPowerText || '--').trim() || '--');
 const liveReportTimeText = computed(() => String(liveWeather.value?.reportTime || forecastWeather.value?.reportTime || '--').trim() || '--');
 
-const baseRawJson = computed(() => JSON.stringify(baseRawPayload.value || {}, null, 2));
-const forecastRawJson = computed(() => JSON.stringify(forecastRawPayload.value || {}, null, 2));
-
 const rainFocus = computed(() => {
     const liveText = String(liveWeather.value?.weather || '').trim();
     const liveHasRain = hasRainSignal(liveText);
@@ -347,8 +339,10 @@ const rainFocus = computed(() => {
 function renderTrendChart() {
     if (!trendChart || !echartsModule) return;
 
-    const mobile = isMobile.value;
-    const compact = isCompact.value;
+    const chartWidth = Number(trendChart?.getWidth?.() || trendChartRef.value?.clientWidth || viewportWidth.value || 640);
+    const chartHeight = Number(trendChart?.getHeight?.() || trendChartRef.value?.clientHeight || 260);
+    const mobile = chartWidth <= 460;
+    const compact = chartWidth <= 560 || chartHeight <= 240;
 
     const dates = casts.value.map((item) => formatDateLabel(item.date));
     const dayTemps = casts.value.map((item) => toNumberOrNull(item?.dayTemp));
@@ -477,19 +471,20 @@ function getWindLayoutMetrics() {
     const rawWidth = Number(windChart?.getWidth?.() || windChartRef.value?.clientWidth || 640);
     const rawHeight = Number(windChart?.getHeight?.() || windChartRef.value?.clientHeight || 280);
 
-    const width = Math.max(320, rawWidth);
-    const height = Math.max(200, rawHeight);
+    const width = Math.max(260, rawWidth);
+    const height = Math.max(190, rawHeight);
     const ratio = width / Math.max(height, 1);
+    const compact = width <= 420 || height <= 230;
 
     const legendTopPx = clampValue(Math.round(height * 0.03), 4, 12);
-    const legendFontSize = clampValue(Math.round(width * 0.018), 10, 14);
+    const legendFontSize = compact ? 10 : clampValue(Math.round(width * 0.018), 10, 14);
     const legendItemWidth = clampValue(Math.round(width * 0.02), 8, 16);
     const legendItemHeight = clampValue(Math.round(height * 0.022), 5, 9);
 
-    const preferredGaugeByWidth = ratio >= 2.2 ? width * 0.12 : width * 0.15;
-    const preferredGaugeByHeight = height * 0.3;
-    const gaugeRadiusPx = clampValue(Math.round(Math.min(preferredGaugeByWidth, preferredGaugeByHeight)), 46, 96);
-    const gaugeCenterYPx = clampValue(Math.round(legendTopPx + 16 + gaugeRadiusPx * 0.85), 60, Math.round(height * 0.42));
+    const preferredGaugeByWidth = ratio >= 2.2 ? width * 0.1 : width * 0.13;
+    const preferredGaugeByHeight = height * (compact ? 0.24 : 0.28);
+    const gaugeRadiusPx = clampValue(Math.round(Math.min(preferredGaugeByWidth, preferredGaugeByHeight)), compact ? 34 : 42, compact ? 58 : 88);
+    const gaugeCenterYPx = clampValue(Math.round(legendTopPx + 18 + gaugeRadiusPx * 0.8), 52, Math.round(height * (compact ? 0.34 : 0.4)));
 
     const minSide = Math.min(width, height);
     const gaugeRadiusPercent = `${clampValue((gaugeRadiusPx / minSide) * 100, 14, 34).toFixed(2)}%`;
@@ -497,23 +492,23 @@ function getWindLayoutMetrics() {
 
     const gaugeStroke = clampValue(Math.round(gaugeRadiusPx * 0.15), 6, 11);
     const gaugeSplitLength = clampValue(Math.round(gaugeRadiusPx * 0.12), 5, 8);
-    const gaugeAxisFontSize = clampValue(Math.round(gaugeRadiusPx * 0.14), 7, 10);
-    const gaugeDetailFontSize = clampValue(Math.round(gaugeRadiusPx * 0.35), 14, 24);
+    const gaugeAxisFontSize = compact ? 7 : clampValue(Math.round(gaugeRadiusPx * 0.14), 7, 10);
+    const gaugeDetailFontSize = compact ? 12 : clampValue(Math.round(gaugeRadiusPx * 0.35), 14, 24);
     const gaugeSplitNumber = 4;
     const gaugeLabelStep = 3;
     const gaugeLabelDistance = clampValue(Math.round(gaugeRadiusPx * 0.25), 10, 22);
 
     const barsTopPx = clampValue(
-        Math.round(gaugeCenterYPx + gaugeRadiusPx * 0.45 + height * 0.06),
-        120,
-        Math.round(height * 0.6)
+        Math.round(gaugeCenterYPx + gaugeRadiusPx * (compact ? 0.5 : 0.46) + height * 0.055),
+        compact ? 96 : 116,
+        Math.round(height * (compact ? 0.54 : 0.6))
     );
     const barsTopPercent = `${((barsTopPx / height) * 100).toFixed(2)}%`;
 
     const gridLeft = clampValue(Math.round(width * 0.055), 26, 52);
     const gridRight = clampValue(Math.round(width * 0.03), 12, 22);
-    const gridBottom = clampValue(Math.round(height * 0.09), 24, 40);
-    const axisFontSize = clampValue(Math.round(width * 0.017), 10, 13);
+    const gridBottom = clampValue(Math.round(height * 0.09), compact ? 20 : 24, 40);
+    const axisFontSize = compact ? 10 : clampValue(Math.round(width * 0.017), 10, 13);
     const yNameFontSize = clampValue(axisFontSize - 1, 9, 12);
     const barMaxWidth = clampValue(Math.round(width * 0.028), 8, 20);
     const lineSymbolSize = clampValue(Math.round(width * 0.011), 4, 7);
@@ -540,7 +535,8 @@ function getWindLayoutMetrics() {
         axisFontSize,
         yNameFontSize,
         barMaxWidth,
-        lineSymbolSize
+        lineSymbolSize,
+        compact
     };
 }
 
@@ -578,9 +574,12 @@ function renderWindChart() {
         legend: {
             data: ['白天风力', '夜间风力', '平均风力'],
             top: metrics.legendTopPx,
+            type: 'scroll',
             icon: 'roundRect',
             itemWidth: metrics.legendItemWidth,
             itemHeight: metrics.legendItemHeight,
+            pageIconColor: readCSSVar('--neon-cyan') || '#0db4f7',
+            pageTextStyle: { color: readCSSVar('--text-muted') || '#789' },
             textStyle: { color: readCSSVar('--text-secondary') || '#6aa9ff', fontSize: metrics.legendFontSize }
         },
         grid: {
@@ -691,10 +690,10 @@ function renderWindChart() {
                 title: { show: false },
                 detail: {
                     valueAnimation: true,
-                    fontSize: Math.min(metrics.gaugeDetailFontSize, 13),
+                    fontSize: metrics.compact ? 11 : Math.min(metrics.gaugeDetailFontSize, 13),
                     fontWeight: 700,
                     color: readCSSVar('--text-primary') || '#e8f4ff',
-                    offsetCenter: [0, '48%'],
+                    offsetCenter: [0, metrics.compact ? '55%' : '48%'],
                     formatter: '{value} 级'
                 },
                 data: [{ value: currentWind }]
@@ -780,6 +779,38 @@ function resizeCharts() {
     windChart?.resize?.();
 }
 
+function schedulePanelChartResize() {
+    if (typeof window === 'undefined') return;
+    if (panelResizeFrame) {
+        window.cancelAnimationFrame(panelResizeFrame);
+    }
+    panelResizeFrame = window.requestAnimationFrame(() => {
+        panelResizeFrame = 0;
+        resizeCharts();
+        renderTrendChart();
+        renderWindChart();
+    });
+}
+
+function startPanelResizeObserver() {
+    if (typeof ResizeObserver === 'undefined' || !panelRef.value || panelResizeObserver) return;
+    panelResizeObserver = new ResizeObserver(() => {
+        schedulePanelChartResize();
+    });
+    panelResizeObserver.observe(panelRef.value);
+    if (trendChartRef.value) panelResizeObserver.observe(trendChartRef.value);
+    if (windChartRef.value) panelResizeObserver.observe(windChartRef.value);
+}
+
+function stopPanelResizeObserver() {
+    panelResizeObserver?.disconnect?.();
+    panelResizeObserver = null;
+    if (typeof window !== 'undefined' && panelResizeFrame) {
+        window.cancelAnimationFrame(panelResizeFrame);
+        panelResizeFrame = 0;
+    }
+}
+
 function handleWindowResize() {
     if (typeof window === 'undefined') return;
 
@@ -813,11 +844,6 @@ async function loadWeatherForCoords(lon, lat) {
         const city = prevGeo?.city || data.live.city || '';
         liveWeather.value = { ...data.live, province, city };
         forecastWeather.value = data.forecast;
-        // Populate meta for the detail panel
-        baseApiMeta.value = { status: 'OK', count: '1', info: 'Open-Meteo', infocode: 'free' };
-        forecastApiMeta.value = { status: 'OK', count: String(data.forecast.casts.length), info: 'Open-Meteo 7-day', infocode: 'free' };
-        baseRawPayload.value = data.raw.current;
-        forecastRawPayload.value = data.raw.daily;
         await nextTick();
         resizeCharts();
         renderTrendChart();
@@ -865,57 +891,6 @@ async function resolveAdcodeByLonLat(lon, lat, source = 'map-event') {
     } catch { /* geocode failed, still show weather with coords */ }
 
     await loadWeatherForCoords(longitude, latitude);
-}
-
-async function applyAdcodeQuery() {
-    const nextAdcode = String(adcodeInput.value || '').trim();
-    if (!/^\d{6}$/.test(nextAdcode)) {
-        message.warning('请输入有效的 6 位 adcode');
-        return;
-    }
-
-    weatherStore.setAdcode(nextAdcode, { source: 'manual-adcode' });
-    message.info('当前使用 Open-Meteo，请通过地图定位查询天气');
-}
-
-async function resolveCityAndQuery() {
-    const cityText = String(cityInput.value || '').trim();
-    if (!cityText) {
-        message.warning('请输入城市或区县名称');
-        return;
-    }
-
-    isBusy.value = true;
-    try {
-        const geocodeResponse = await apiAddressGeocode(cityText, cityText, { silent: true });
-        const geocode = geocodeResponse?.data || null;
-        if (!geocode || !Number.isFinite(geocode.lng) || !Number.isFinite(geocode.lat)) {
-            throw new Error('未解析到有效坐标');
-        }
-
-        const reverseResponse = await apiReverseGeocodeWithFallback(geocode.lng, geocode.lat, {
-            tiandituTk: TIANDITU_TK,
-            silent: true
-        });
-        const reverseResult = reverseResponse?.data || null;
-
-        const nextAdcode = String(geocode?.adcode || reverseResult?.adcode || '').trim();
-        if (!/^\d{6}$/.test(nextAdcode)) {
-            message.warning('未解析到有效 adcode，请尝试更详细的地名');
-            return;
-        }
-
-        weatherStore.setAdcode(nextAdcode, {
-            city: reverseResult?.city || cityText,
-            province: reverseResult?.province || weatherStore.currentProvince,
-            source: 'city-input'
-        });
-
-        adcodeInput.value = nextAdcode;
-        message.info('当前使用 Open-Meteo，请通过地图定位查询天气');
-    } finally {
-        isBusy.value = false;
-    }
 }
 
 async function refreshWeather() {
@@ -974,6 +949,7 @@ if (typeof window !== 'undefined') {
 
 onMounted(async () => {
     await ensureChartInstances();
+    startPanelResizeObserver();
     viewportWidth.value = typeof window !== 'undefined' ? window.innerWidth : 1366;
 
     const loadedFromContext = applyAdcodeFromLocationContext(null, 'location-context-initial');
@@ -990,6 +966,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    stopPanelResizeObserver();
     if (typeof window !== 'undefined') {
         window.removeEventListener(USER_LOCATION_CONTEXT_CHANGE_EVENT, handleLocationContextChange);
         window.removeEventListener('resize', handleWindowResize);
@@ -1008,8 +985,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .weather-panel {
-    height: 100%; width: 100%;
-    display: flex; flex-direction: column; gap: var(--space-sm);
+    height: 100%;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
     padding: var(--space-md);
     box-sizing: border-box;
     background: var(--glass-bg-heavy);
@@ -1019,6 +1001,7 @@ onBeforeUnmount(() => {
     border-radius: var(--radius-lg);
     overflow: auto;
     transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    container-type: size;
 }
 .weather-panel.wx-fullscreen {
     position: fixed; inset: 56px 0 0 0; z-index: 100;
@@ -1026,11 +1009,15 @@ onBeforeUnmount(() => {
 }
 
 .weather-toolbar {
-    display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
     padding: var(--space-sm) var(--space-md);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-subtle);
     background: var(--surface-0);
+    flex-shrink: 0;
 }
 
 .weather-title {
@@ -1042,6 +1029,18 @@ onBeforeUnmount(() => {
     color: var(--text-muted);
 }
 
+.weather-toolbar-left {
+    min-width: 0;
+}
+
+.weather-toolbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .toolbar-btn {
     border: 1px solid var(--border-active); border-radius: var(--radius-sm);
     background: var(--neon-cyan-dim); color: var(--neon-cyan);
@@ -1051,6 +1050,11 @@ onBeforeUnmount(() => {
 .toolbar-btn:hover {
     background: rgba(13, 180, 247, 0.22);
     box-shadow: var(--neon-cyan-glow);
+}
+.toolbar-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
 }
 .wx-max-btn {
     border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
@@ -1070,8 +1074,9 @@ onBeforeUnmount(() => {
 
 .live-cards {
     display: grid;
-    grid-template-columns: minmax(260px, 2.1fr) repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(min(260px, 100%), 2.1fr) repeat(4, minmax(96px, 1fr));
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .live-main-card {
@@ -1118,6 +1123,7 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: space-between;
     gap: var(--space-md);
+    flex-shrink: 0;
 }
 .rain-focus-panel.has-rain {
     border-color: rgba(13, 180, 247, 0.25);
@@ -1159,7 +1165,7 @@ onBeforeUnmount(() => {
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
-    min-width: 260px;
+    min-width: min(260px, 100%);
 }
 
 .rain-badge {
@@ -1189,7 +1195,8 @@ onBeforeUnmount(() => {
     background: rgba(255, 255, 255, 0.75);
     color: #1f5b3b;
     font-size: 11px;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .rain-hit.empty {
@@ -1199,16 +1206,17 @@ onBeforeUnmount(() => {
 
 .charts-layout {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
     gap: 10px;
     align-items: stretch;
     position: relative;
+    min-height: 0;
 }
 
 .chart-panel {
     border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
     background: var(--surface-card);
-    display: flex; flex-direction: column; min-height: 0; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; overflow: hidden;
 }
 .chart-title {
     padding: var(--space-sm) var(--space-md) 2px;
@@ -1216,31 +1224,13 @@ onBeforeUnmount(() => {
     font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;
     color: var(--text-muted);
 }
-.chart-canvas { width: 100%; height: clamp(220px, 32vh, 320px); min-height: 220px; }
+.chart-canvas {
+    width: 100%;
+    height: clamp(210px, 34cqh, 330px);
+    min-height: 210px;
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-.toolbar-btn:disabled,
-
-@media (max-width: 1200px) {
+@container (max-width: 900px) {
     .live-cards {
         grid-template-columns: 1fr 1fr;
     }
@@ -1254,14 +1244,12 @@ onBeforeUnmount(() => {
     }
 
     .chart-canvas {
-        height: clamp(228px, 32vh, 300px);
-        min-height: 228px;
+        height: clamp(205px, 32cqh, 300px);
+        min-height: 205px;
     }
-
-
 }
 
-@media (max-width: 768px) {
+@container (max-width: 560px) {
     .weather-panel {
         padding: 9px;
         gap: 8px;
@@ -1279,14 +1267,13 @@ onBeforeUnmount(() => {
 
     .weather-toolbar-right {
         width: 100%;
+        justify-content: stretch;
     }
 
     .toolbar-btn {
-        width: 100%;
+        flex: 1 1 180px;
         height: 36px;
     }
-
-
 
     .live-cards {
         grid-template-columns: 1fr;
@@ -1322,13 +1309,12 @@ onBeforeUnmount(() => {
     }
 
     .chart-canvas {
-        height: 230px;
-        min-height: 210px;
+        height: clamp(195px, 30cqh, 260px);
+        min-height: 195px;
     }
-
 }
 
-@media (max-width: 480px) {
+@container (max-width: 420px) {
     .weather-panel {
         padding: 8px;
     }
@@ -1354,8 +1340,14 @@ onBeforeUnmount(() => {
     }
 
     .chart-canvas {
-        height: 212px;
-        min-height: 200px;
+        height: 200px;
+        min-height: 190px;
+    }
+}
+
+@media (max-width: 768px) {
+    .weather-panel {
+        padding: 9px;
     }
 }
 </style>

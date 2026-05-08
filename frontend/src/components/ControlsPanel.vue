@@ -93,10 +93,8 @@ const message = useMessage();
 const layerStore = useLayerStore();
 
 // ========== 卷帘分析支持的底图 ==========
-// 排除不支持的底图：'custom'（需要customUrl）和'local_tiles_preset'（本地瓦片）
-const SWIPE_SUPPORTED_BASEMAPS = BASEMAP_OPTIONS.filter(
-    option => option.value !== 'custom' && option.value !== 'local_tiles_preset'
-);
+// BASEMAP_OPTIONS 已经由底图白名单注册表生成，均为可参与卷帘对比的在线底图。
+const SWIPE_SUPPORTED_BASEMAPS = BASEMAP_OPTIONS;
 
 // ========== Map Swipe 对话框状态 ==========
 const showSwipeDialog = ref(false);
@@ -168,9 +166,7 @@ const handleSelect = (id) => {
             break;
 
         case 'toggleAnalyze':
-            emit('open-tab', 'toolbox');
             emit('show-analysis');
-            message.info('分析入口已打开');
             break;
 
         case 'toggleAdcode':

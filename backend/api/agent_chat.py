@@ -1207,6 +1207,7 @@ async def _call_upstream_chat(
     timeout_seconds: int,
     max_tokens: int,
     temperature: float,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
 
@@ -1217,6 +1218,8 @@ async def _call_upstream_chat(
         "max_tokens": int(max_tokens),
         "temperature": float(temperature),
     }
+    if response_format:
+        payload["response_format"] = response_format
 
     headers = {
         "Content-Type": "application/json",
@@ -2182,4 +2185,3 @@ async def update_user_model_preference(
             "preferred_model": preferred_model,
         },
     }
-

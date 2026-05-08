@@ -137,6 +137,32 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
+def _normalize_location_text(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return ""
+    return str(value or "").strip()
+
+
+def _parse_amap_rectangle(raw_rectangle: Any) -> Optional[list]:
+    if isinstance(raw_rectangle, (list, tuple)):
+        values = []
+        for item in raw_rectangle:
+            if isinstance(item, (list, tuple)):
+                values.extend(item)
+            else:
+                values.append(item)
+    else:
+        text = str(raw_rectangle or "").replace(";", ",")
+        values = [part.strip() for part in text.split(",") if part.strip()]
+
+    try:
+        nums = [float(item) for item in values[:4]]
+    except (TypeError, ValueError):
+        return None
+
+    return nums if len(nums) >= 4 else None
+
+
 async def amap_ip_locate(ip: str) -> Optional[Dict[str, Any]]:
     """
     调用高德 IP 定位 API
@@ -156,14 +182,17 @@ async def amap_ip_locate(ip: str) -> Optional[Dict[str, Any]]:
             data = response.json()
             
             if data.get("status") == "1":
-                rect = data.get("rectangle", "0,0,0,0")
-                parts = [p for p in rect.replace(";", ",").split(",") if p.strip()]
-                extent = [float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])] if len(parts) >= 4 else None
+                extent = _parse_amap_rectangle(data.get("rectangle", ""))
+                city = _normalize_location_text(data.get("city"))
+                province = _normalize_location_text(data.get("province"))
+                adcode = _normalize_location_text(data.get("adcode"))
+                if not extent and not any((city, province, adcode)):
+                    return None
                 return {
-                    "city": data.get("city"),
-                    "province": data.get("province"),
+                    "city": city,
+                    "province": province,
                     "country": data.get("country", "中国"),
-                    "adcode": data.get("adcode"),
+                    "adcode": adcode,
                     "extent": extent,
                 }
             else:

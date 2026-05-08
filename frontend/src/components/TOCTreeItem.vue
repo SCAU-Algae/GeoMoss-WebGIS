@@ -30,6 +30,7 @@
                     v-if="node.showCheckbox !== false"
                     type="checkbox"
                     :checked="!!node.visible"
+                    :disabled="!!node.disabled"
                     :ref="node.type === 'folder' ? setFolderCheckboxRef : null"
                     @change="handleToggleVisibility"
                 />
@@ -260,6 +261,7 @@ function handleMenuCommand(key) {
 }
 
 function handleToggleVisibility(event) {
+    if (props.node.disabled) return;
     const visible = !!event?.target?.checked;
     if (props.node.type === 'folder') {
         emitAction('toggle-folder-visibility', { nodeId: props.node.id, visible });
@@ -269,6 +271,7 @@ function handleToggleVisibility(event) {
 }
 
 function handlePrimaryClick() {
+    if (props.node.disabled) return;
     if (props.node.type === 'layer') {
         emitAction('layer-selected', { layerId: props.node.id });
     }
@@ -358,6 +361,15 @@ onBeforeUnmount(() => {
 
 .toc-row.is-multi-selected .name {
     color: var(--accent-blue);
+}
+
+.toc-row:has(input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.toc-row:has(input:disabled) .name {
+    color: var(--text-muted);
 }
 
 .toc-row::before {
@@ -526,7 +538,7 @@ onBeforeUnmount(() => {
 
 .toc-context-menu {
     position: fixed;
-    z-index: 1200;
+    z-index: 6200;
     min-width: 180px;
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);

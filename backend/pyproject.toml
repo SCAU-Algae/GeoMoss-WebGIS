@@ -1,7 +1,7 @@
 [project]
 name = "webgis-backend"
-version = "0.1.0"
-description = "WebGIS 后端服务（FastAPI + Pandas）"
+version = "3.1.0"
+description = "GeoMoss WebGIS backend service"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -10,6 +10,10 @@ dependencies = [
     "httpx>=0.24.0",
     "pandas>=2.0.0",
     "psycopg2-binary>=2.9.0",
+    "numpy>=1.24.0",
+    "pyproj>=3.5.0",
+    "pyshp>=2.3.1",
+    "pillow>=10.0.0",
     "pytz",
     "python-multipart>=0.0.6",
 ]

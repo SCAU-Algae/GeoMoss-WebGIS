@@ -12,6 +12,7 @@ import {
 } from '../utils/auth';
 
 const HomeView = () => import('./lazyHomeViewLoader').then((mod) => mod.loadHomeView());
+const AdminDashboardView = () => import('../views/AdminDashboardView.vue');
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -31,6 +32,12 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/admin',
+      name: 'admin-dashboard',
+      component: AdminDashboardView,
+      meta: { requiresAuth: true, requiresAdmin: true }
     }
   ]
 });
@@ -87,6 +94,7 @@ let lastNavigationPath = null;
 
 router.beforeEach(async (to, from) => {
   const requiresAuth = !!to.meta?.requiresAuth;
+  const requiresAdmin = !!to.meta?.requiresAdmin;
   const shareModeEnabled = readShareFlagFromRoute(to);
   const shouldCheckAuth = requiresAuth || to.name === 'register';
   const isHomeRoute = to.name === 'home';
@@ -155,6 +163,13 @@ router.beforeEach(async (to, from) => {
         name: 'register',
         query: { redirect: to.fullPath }
       };
+    }
+
+    if (requiresAdmin && !shareModeEnabled) {
+      const role = String(authStore.user?.role || '').trim().toLowerCase();
+      if (role !== 'admin') {
+        return { name: 'home' };
+      }
     }
 
     if (to.name === 'register' && isLoggedIn && !shareModeEnabled) {

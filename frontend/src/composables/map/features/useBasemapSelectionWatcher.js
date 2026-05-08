@@ -21,9 +21,8 @@ export function createBasemapSelectionWatcher({
     createBaseLayerFallbackManager,
     getBasemapOptionLabel,
     message,
-    defaultLayerId = 'google',
+    defaultLayerId = 'vector_amap_preset',
     validationTimeoutMs = 3000,
-    switchDebounceMs = 300,
     circuitBreakThreshold = 3,
     onCircuitBreak,
     onCircuitReset,
@@ -232,7 +231,9 @@ export function createBasemapSelectionWatcher({
          * [改进] 验证任何情况都要执行，包括自动降级
          * 原来的跳过验证代码已删除
          */
-        const switchedLayer = layerInstances?.[val];
+        const switchedLayer = activeStack
+            .map((layerId) => layerInstances?.[layerId])
+            .find(Boolean) || layerInstances?.[val];
         if (!switchedLayer) return;
 
         // 创建 AbortController 用于验证过程中的中止
@@ -269,7 +270,8 @@ export function createBasemapSelectionWatcher({
                     if (nextFallbackOption && nextFallbackOption !== val) {
                         isAutoSwitchingLayer = true;
                         selectedLayerRef.value = nextFallbackOption;
-                        message?.info?.(`已自动切换至${nextFallbackOption}底图`);
+                        const fallbackLabel = getBasemapOptionLabel?.(nextFallbackOption) || nextFallbackOption;
+                        message?.info?.(`已自动切换至${fallbackLabel}底图`);
                     }
                     return;
                 }
@@ -289,7 +291,8 @@ export function createBasemapSelectionWatcher({
 
                 isAutoSwitchingLayer = true;
                 selectedLayerRef.value = nextFallbackOption;
-                message?.info?.(`已自动切换至${nextFallbackOption}底图`);
+                const fallbackLabel = getBasemapOptionLabel?.(nextFallbackOption) || nextFallbackOption;
+                message?.info?.(`已自动切换至${fallbackLabel}底图`);
             } catch (e) {
                 ongoingValidations.delete(val);
             }

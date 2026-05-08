@@ -1,7 +1,7 @@
 <template>
     <div class="api-keys-container">
         <div class="keys-header">
-            <h2>🔑 API 密钥管理</h2>
+            <h2>API 密钥管理</h2>
             <p class="subtitle">管理第三方 API 密钥，确保系统正常运行</p>
         </div>
 
@@ -15,7 +15,7 @@
                 <!-- 高德地图 API Key -->
                 <div class="key-card">
                     <div class="key-header">
-                        <h3>🗺️ 高德地图 API Key</h3>
+                        <h3>高德地图 API Key</h3>
                         <span :class="['status-badge', keysStatus.amap_key?.is_set ? 'set' : 'unset']">
                             {{ keysStatus.amap_key?.is_set ? '已配置' : '未配置' }}
                         </span>
@@ -35,7 +35,7 @@
                         </div>
                         <div v-else class="key-display">
                             <p class="key-value">
-                                {{ keysStatus.amap_key?.is_set ? '●●●●●●●●●●(已设置)' : '未配置' }}
+                                {{ keysStatus.amap_key?.is_set ? '**********(已设置)' : '未配置' }}
                             </p>
                             <div class="key-actions">
                                 <button class="btn btn-edit" @click="startEdit('amap_key')">编辑</button>
@@ -63,7 +63,7 @@
                 <!-- Agent 对话 API Key -->
                 <div class="key-card">
                     <div class="key-header">
-                        <h3>🤖 Agent 对话 API Key</h3>
+                        <h3>Agent 对话 API Key</h3>
                         <span :class="['status-badge', keysStatus.agent_api_key?.is_set ? 'set' : 'unset']">
                             {{ keysStatus.agent_api_key?.is_set ? '已配置' : '未配置' }}
                         </span>
@@ -83,7 +83,7 @@
                         </div>
                         <div v-else class="key-display">
                             <p class="key-value">
-                                {{ keysStatus.agent_api_key?.is_set ? '●●●●●●●●●●(已设置)' : '未配置' }}
+                                {{ keysStatus.agent_api_key?.is_set ? '**********(已设置)' : '未配置' }}
                             </p>
                             <div class="key-actions">
                                 <button class="btn btn-edit" @click="startEdit('agent_api_key')">编辑</button>
@@ -106,7 +106,7 @@
                 <!-- 天地图 API Key (可选) -->
                 <div class="key-card">
                     <div class="key-header">
-                        <h3>🌍 天地图 TK</h3>
+                        <h3>天地图 TK</h3>
                         <span :class="['status-badge', keysStatus.tianditu_tk?.is_set ? 'set' : 'unset']">
                             {{ keysStatus.tianditu_tk?.is_set ? '已配置' : '未配置' }}
                         </span>
@@ -126,7 +126,7 @@
                         </div>
                         <div v-else class="key-display">
                             <p class="key-value">
-                                {{ keysStatus.tianditu_tk?.is_set ? '●●●●●●●●●●(已设置)' : '未配置' }}
+                                {{ keysStatus.tianditu_tk?.is_set ? '**********(已设置)' : '未配置' }}
                             </p>
                             <div class="key-actions">
                                 <button class="btn btn-edit" @click="startEdit('tianditu_tk')">编辑</button>
@@ -147,12 +147,57 @@
                         最后更新: {{ formatTime(keysStatus.tianditu_tk?.updated_at) }}
                     </div>
                 </div>
+
+                <!-- 千问视觉 API Key -->
+                <div class="key-card">
+                    <div class="key-header">
+                        <h3>千问视觉 API Key</h3>
+                        <span :class="['status-badge', keysStatus.dashscope_api_key?.is_set ? 'set' : 'unset']">
+                            {{ keysStatus.dashscope_api_key?.is_set ? '已配置' : '未配置' }}
+                        </span>
+                    </div>
+                    <div class="key-body">
+                        <div v-if="editingKey === 'dashscope_api_key'" class="edit-form">
+                            <textarea
+                                v-model="editValues.dashscope_api_key"
+                                placeholder="粘贴阿里云百炼 DashScope API Key"
+                                rows="3"
+                                class="key-input"
+                            ></textarea>
+                            <div class="button-group">
+                                <button class="btn btn-save" @click="saveKey('dashscope_api_key')">保存</button>
+                                <button class="btn btn-cancel" @click="cancelEdit">取消</button>
+                            </div>
+                        </div>
+                        <div v-else class="key-display">
+                            <p class="key-value">
+                                {{ keysStatus.dashscope_api_key?.is_set ? '**********(已设置)' : '未配置' }}
+                            </p>
+                            <div class="key-actions">
+                                <button class="btn btn-edit" @click="startEdit('dashscope_api_key')">编辑</button>
+                                <button
+                                    v-if="keysStatus.dashscope_api_key?.is_set"
+                                    class="btn btn-delete"
+                                    @click="deleteKey('dashscope_api_key')"
+                                >
+                                    删除
+                                </button>
+                            </div>
+                            <p class="key-hint">
+                                用于风水分析的遥感截图水体识别，后端调用千问视觉模型
+                            </p>
+                        </div>
+                    </div>
+                    <div class="key-footer">
+                        最后更新: {{ formatTime(keysStatus.dashscope_api_key?.updated_at) }}
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="agent-config-section">
             <div class="section-header-row">
-                <h3>⚙️ Agent 对话参数</h3>
+                <h3>Agent 对话参数</h3>
                 <div class="section-actions">
                     <button class="btn btn-edit" @click="loadAgentConfig">刷新</button>
                     <button
@@ -274,7 +319,7 @@
 
         <!-- 提示信息 -->
         <div class="warning-box">
-            <span class="warning-icon">⚠️</span>
+            <span class="warning-icon">!</span>
             <div class="warning-content">
                 <p><strong>安全提示：</strong></p>
                 <ul>
@@ -306,6 +351,7 @@ const keysStatus = ref({
     amap_key: { is_set: false, updated_at: null },
     agent_api_key: { is_set: false, updated_at: null },
     tianditu_tk: { is_set: false, updated_at: null },
+    dashscope_api_key: { is_set: false, updated_at: null },
 });
 
 const editingKey = ref(null);
@@ -313,6 +359,7 @@ const editValues = ref({
     amap_key: '',
     agent_api_key: '',
     tianditu_tk: '',
+    dashscope_api_key: '',
 });
 
 const agentConfigLoading = ref(false);
@@ -363,6 +410,7 @@ async function loadKeysStatus() {
             amap_key: data.amap_key || { is_set: false, updated_at: null },
             agent_api_key: data.agent_api_key || data.agent_token || { is_set: false, updated_at: null },
             tianditu_tk: data.tianditu_tk || { is_set: false, updated_at: null },
+            dashscope_api_key: data.dashscope_api_key || data.qwen_vision_api_key || { is_set: false, updated_at: null },
         };
     } catch (error) {
         message.error(`加载密钥状态失败: ${error.message}`);
@@ -382,6 +430,7 @@ function cancelEdit() {
         amap_key: '',
         agent_api_key: '',
         tianditu_tk: '',
+        dashscope_api_key: '',
     };
 }
 
@@ -567,48 +616,57 @@ onMounted(async () => {
 
 <style scoped>
 .api-keys-container {
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(76, 175, 80, 0.2);
-    box-shadow: 0 8px 32px rgba(33, 74, 49, 0.05);
-    border-radius: 12px;
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--text-primary);
 }
 
 .keys-header {
-    margin-bottom: 30px;
-    text-align: center;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: left;
 }
 
 .keys-header h2 {
-    font-size: 28px;
-    margin: 0 0 8px 0;
-    color: #214a31;
+    font-size: 16px;
+    line-height: 1.35;
+    margin: 0 0 6px 0;
+    color: var(--text-primary);
+    font-weight: 700;
 }
 
 .subtitle {
-    color: #4b8b60;
+    color: var(--text-secondary);
     margin: 0;
     font-size: 14px;
 }
 
 .loading-state {
+    min-height: 128px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 10px;
+    padding: 28px;
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    color: var(--text-secondary);
     text-align: center;
-    padding: 40px;
-    color: #4b8b60;
+    font-size: 13px;
 }
 
 .spinner {
     display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid rgba(76, 175, 80, 0.1);
-    border-top: 2px solid #4caf50;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--neon-cyan-dim);
+    border-top: 2px solid var(--neon-cyan);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-right: 8px;
 }
 
 @keyframes spin {
@@ -618,56 +676,72 @@ onMounted(async () => {
 
 .keys-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    gap: 20px;
-    margin-bottom: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
 }
 
 .key-card {
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 8px;
+    min-width: 0;
+    background: var(--surface-1);
+    border-radius: var(--radius-sm);
     overflow: hidden;
-    border: 1px solid rgba(76, 175, 80, 0.2);
-    box-shadow: 0 4px 12px rgba(33, 74, 49, 0.05);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-button);
     display: flex;
     flex-direction: column;
+    transition:
+        border-color var(--duration-fast) var(--ease-spatial),
+        background var(--duration-fast) var(--ease-spatial),
+        transform var(--duration-fast) var(--ease-spatial);
+}
+
+.key-card:hover {
+    border-color: var(--border-active);
+    background: var(--surface-hover);
+    transform: translateY(-1px);
 }
 
 .key-header {
-    background: linear-gradient(135deg, #6fca7a 0%, #4caf50 100%);
-    color: white;
-    padding: 16px;
+    background: var(--neon-cyan-dim);
+    color: var(--text-primary);
+    padding: 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 .key-header h3 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.35;
 }
 
 .status-badge {
     font-size: 12px;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .status-badge.set {
-    background: rgba(255, 255, 255, 0.3);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: var(--neon-cyan-dim);
+    color: var(--neon-cyan);
+    border: 1px solid var(--border-active);
 }
 
 .status-badge.unset {
-    background: rgba(244, 67, 54, 0.8);
-    color: white;
+    background: var(--accent-amber-dim);
+    color: var(--accent-amber);
+    border: 1px solid rgba(246, 173, 85, 0.32);
 }
 
 .key-body {
-    padding: 16px;
+    padding: 12px;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -678,14 +752,15 @@ onMounted(async () => {
 }
 
 .key-value {
-    background: rgba(76, 175, 80, 0.05);
-    padding: 12px;
-    border-radius: 4px;
-    font-family: monospace;
-    color: #214a31;
-    border: 1px solid rgba(76, 175, 80, 0.1);
-    margin: 0 0 12px 0;
+    background: rgba(6, 11, 16, 0.42);
+    padding: 10px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    margin: 0 0 10px 0;
     word-break: break-all;
+    font-size: 12px;
 }
 
 .key-actions {
@@ -696,19 +771,19 @@ onMounted(async () => {
 
 .key-hint {
     font-size: 12px;
-    color: #6c9e78;
+    color: var(--text-secondary);
     margin: 0;
 }
 
 .key-hint a {
-    color: #4caf50;
+    color: var(--neon-cyan);
     text-decoration: none;
     font-weight: bold;
 }
 
 .key-hint a:hover {
     text-decoration: underline;
-    color: #388e3c;
+    color: var(--text-primary);
 }
 
 .edit-form {
@@ -719,93 +794,114 @@ onMounted(async () => {
 
 .key-input {
     width: 100%;
+    min-height: 38px;
     padding: 10px;
-    border: 1px solid rgba(76, 175, 80, 0.3);
-    border-radius: 4px;
-    font-family: monospace;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
     font-size: 12px;
     resize: vertical;
     box-sizing: border-box;
-    background: rgba(255, 255, 255, 0.9);
-    color: #214a31;
+    background: rgba(6, 11, 16, 0.62);
+    color: var(--text-primary);
+    transition:
+        border-color var(--duration-fast) var(--ease-spatial),
+        box-shadow var(--duration-fast) var(--ease-spatial),
+        background var(--duration-fast) var(--ease-spatial);
 }
 
 .key-input:focus {
     outline: none;
-    border-color: #4caf50;
-    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    border-color: var(--border-active);
+    background: var(--surface-card-strong);
+    box-shadow: var(--shadow-focus);
 }
 
 .button-group {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 4px;
+    min-height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition:
+        background var(--duration-fast) var(--ease-spatial),
+        border-color var(--duration-fast) var(--ease-spatial),
+        color var(--duration-fast) var(--ease-spatial),
+        box-shadow var(--duration-fast) var(--ease-spatial),
+        transform var(--duration-fast) var(--ease-spatial);
     flex: 1;
 }
 
 .btn-edit {
-    background: rgba(76, 175, 80, 0.1);
-    color: #4caf50;
-    border: 1px solid #4caf50;
+    background: var(--neon-cyan-dim);
+    color: var(--neon-cyan);
+    border-color: var(--border-active);
 }
 
 .btn-edit:hover {
-    background: #4caf50;
-    color: white;
+    background: var(--surface-hover);
+    color: var(--neon-cyan);
+    box-shadow: var(--neon-cyan-glow);
+    transform: translateY(-1px);
 }
 
 .btn-delete {
-    background: rgba(244, 67, 54, 0.1);
-    color: #f44336;
-    border: 1px solid #f44336;
+    background: var(--accent-rose-dim);
+    color: var(--accent-rose);
+    border-color: rgba(245, 101, 101, 0.36);
 }
 
 .btn-delete:hover {
-    background: #f44336;
-    color: white;
+    background: rgba(245, 101, 101, 0.22);
+    color: var(--text-primary);
 }
 
 .btn-save {
-    background: #4caf50;
-    color: white;
+    background: var(--neon-cyan-dim);
+    color: var(--neon-cyan);
+    border-color: var(--border-active);
 }
 
 .btn-save:hover {
-    background: #388e3c;
+    background: var(--surface-hover);
+    box-shadow: var(--neon-cyan-glow);
+    transform: translateY(-1px);
 }
 
 .btn-cancel {
-    background: #e0e0e0;
-    color: #333;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
 }
 
 .btn-cancel:hover {
-    background: #bdbdbd;
+    color: var(--text-primary);
+    background: var(--surface-hover);
 }
 
 .key-footer {
-    background: rgba(76, 175, 80, 0.02);
-    padding: 8px 16px;
-    border-top: 1px solid rgba(76, 175, 80, 0.1);
+    background: rgba(6, 11, 16, 0.36);
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-subtle);
     font-size: 11px;
-    color: #6c9e78;
+    color: var(--text-secondary);
 }
 
 .agent-config-section {
     margin-top: 16px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(76, 175, 80, 0.2);
-    border-radius: 8px;
-    padding: 16px;
+    background: var(--surface-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    box-shadow: var(--shadow-button);
 }
 
 .section-header-row {
@@ -818,7 +914,7 @@ onMounted(async () => {
 
 .section-header-row h3 {
     margin: 0;
-    color: #214a31;
+    color: var(--text-primary);
 }
 
 .section-actions {
@@ -828,7 +924,7 @@ onMounted(async () => {
 
 .config-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
 }
 
@@ -836,12 +932,12 @@ onMounted(async () => {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    color: #2e5d3e;
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
 .config-item strong {
-    color: #214a31;
+    color: var(--text-primary);
     font-weight: 600;
     white-space: pre-wrap;
     word-break: break-word;
@@ -860,7 +956,7 @@ onMounted(async () => {
 .config-note {
     margin: 0;
     font-size: 12px;
-    color: #4b8b60;
+    color: var(--text-secondary);
 }
 
 @media (max-width: 900px) {
@@ -870,17 +966,25 @@ onMounted(async () => {
 }
 
 .warning-box {
-    background: rgba(255, 152, 0, 0.1);
-    border: 1px solid rgba(255, 152, 0, 0.3);
-    border-radius: 6px;
-    padding: 16px;
+    background: var(--accent-amber-dim);
+    border: 1px solid rgba(246, 173, 85, 0.28);
+    border-radius: var(--radius-sm);
+    padding: 14px;
     display: flex;
     gap: 12px;
-    margin-top: 20px;
+    margin-top: 14px;
 }
 
 .warning-icon {
-    font-size: 20px;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(246, 173, 85, 0.4);
+    color: var(--accent-amber);
+    font-size: 14px;
+    font-weight: 800;
     flex-shrink: 0;
 }
 
@@ -890,7 +994,7 @@ onMounted(async () => {
 
 .warning-content p {
     margin: 0 0 8px 0;
-    color: #e65100;
+    color: var(--accent-amber);
     font-size: 13px;
     font-weight: bold;
 }
@@ -898,11 +1002,34 @@ onMounted(async () => {
 .warning-content ul {
     margin: 8px 0 0 20px;
     padding: 0;
-    color: #e65100;
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
 .warning-content li {
     margin: 4px 0;
+}
+
+@media (max-width: 768px) {
+    .keys-grid,
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .key-header,
+    .section-header-row,
+    .key-actions,
+    .button-group {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .btn {
+        width: 100%;
+    }
+
+    .warning-box {
+        flex-direction: column;
+    }
 }
 </style>

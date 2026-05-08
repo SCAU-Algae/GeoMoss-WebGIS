@@ -63,46 +63,6 @@
                 @submit="drawAmapAoiFromManualJson"
                 @close="closeManualAoiDialog"
             />
-
-            <!-- 共享资源菜单 -->
-            <div class="shared-resource-wrap">
-                <div class="card shared-resource-card">
-                    <div class="card-title shared-resource-title">
-                        <span class="share-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="18" cy="5" r="3"></circle>
-                                <circle cx="6" cy="12" r="3"></circle>
-                                <circle cx="18" cy="19" r="3"></circle>
-                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                            </svg>
-                        </span>
-                        共享资源
-                    </div>
-                    <div class="shared-resource-menu">
-                        <button 
-                            class="shared-resource-btn" 
-                            :class="{ loading: sharedLoader.isScanning.value }"
-                            @click="scanSharedResources"
-                        >
-                            <span v-if="!sharedLoader.isScanning.value">📁 加载资源</span>
-                            <span v-else>⏳ 扫描中...</span>
-                        </button>
-                        <div v-if="sharedLoader.hasResources.value" class="resource-tree-root">
-                            <SharedResourceTreeItem
-                                v-for="node in sharedLoader.resourceTree.value"
-                                :key="node.id"
-                                :node="node"
-                                :level="0"
-                                @load-resource="loadSharedResource"
-                            />
-                        </div>
-                        <div v-else-if="!sharedLoader.isScanning.value && lastScanAttempted" class="resource-empty">
-                            暂无可用资源
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
 <div v-else-if="activeTab === 'draw'" class="eco-panel-scroll">
@@ -195,14 +155,7 @@
 </div>
 
         <div v-else-if="activeTab === 'upload'" class="panel-scroll upload-tab-scroll">
-            <!-- 子标签：2D / 3D -->
-            <div class="sub-tabs">
-                <button class="sub-tab" :class="{ active: uploadSubTab === '2d' }" @click="uploadSubTab = '2d'">2D 图层</button>
-                <button class="sub-tab" :class="{ active: uploadSubTab === '3d' }" @click="uploadSubTab = '3d'">3D 白模</button>
-            </div>
-
-            <!-- 2D 上传（原上传区域） -->
-            <div v-if="uploadSubTab === '2d'" class="upload-zone-wrap">
+            <div class="upload-zone-wrap">
                 <div
                     class="upload-entry"
                     :class="{ dragging: isUploadDragging }"
@@ -239,81 +192,6 @@
                         <div class="upload-progress-bar">
                             <div class="upload-progress-fill" :style="{ width: `${uploadProgressPercent}%` }"></div>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3D 上传 -->
-            <div v-else class="threed-upload-section">
-                <div class="upload-card upload-card-howto">
-                    <div class="card-title">如何使用 3D 模式</div>
-                    <p class="card-desc">
-                        上传 SHP 建筑数据后，系统自动生成 3D 白模。<br>
-                        生成完成后，在 <strong>图层目录 → 3D 图层</strong> 中勾选即可进入 3D 视图。<br>
-                        关闭 3D 图层自动回到 2D 模式。
-                    </p>
-                </div>
-                <div class="upload-card">
-                    <div class="card-title">SHP → 3D Tiles</div>
-                    <p class="card-desc">上传含建筑高度的 Shapefile 压缩包 (.zip)，自动生成白模。</p>
-                    <label class="upload-btn-3d" :class="{ disabled: shpUploading }">
-                        <span class="btn-icon-3d">🏗</span>
-                        <span>{{ shpUploading ? '转换中...' : '选择 SHP 压缩包 (.zip)' }}</span>
-                        <input type="file" accept=".zip" style="display:none" @change="handleShpUpload" :disabled="shpUploading" />
-                    </label>
-                    <div v-if="shpUploading && !shpShowConfig" class="shp-status">{{ shpStatusText }}</div>
-
-                    <!-- SHP 配置面板 -->
-                    <div v-if="shpShowConfig" class="shp-config-panel">
-                        <div class="config-row">
-                            <label>高度字段 <span class="cfg-hint">({{ shpRecordCount }} 个要素)</span></label>
-                            <select v-model="shpSelectedHeightField" class="config-select">
-                                <option value="">-- 自动检测 --</option>
-                                <option v-for="f in shpFields" :key="f" :value="f">{{ f }}</option>
-                            </select>
-                        </div>
-                        <div class="config-row">
-                            <label>基础颜色</label>
-                            <div class="color-pick-row">
-                                <input type="color" v-model="shpBaseColor" class="color-input" />
-                                <span class="color-hex">{{ shpBaseColor }}</span>
-                            </div>
-                        </div>
-                        <div class="config-row">
-                            <label>透明度: {{ shpOpacity.toFixed(1) }}</label>
-                            <input type="range" min="0.1" max="1" step="0.1" v-model.number="shpOpacity" class="config-slider" />
-                        </div>
-                        <div class="config-row">
-                            <label>分级着色字段 <span class="cfg-hint">(可选)</span></label>
-                            <select v-model="shpClassifyField" class="config-select">
-                                <option value="">-- 不使用 --</option>
-                                <option v-for="f in shpFields" :key="f" :value="f">{{ f }}</option>
-                            </select>
-                        </div>
-                        <div class="config-row" v-if="shpClassifyField">
-                            <label>色带</label>
-                            <select v-model="shpColorRamp" class="config-select">
-                                <option v-for="r in [{v:'greens',l:'绿色'},{v:'blues',l:'蓝色'},{v:'reds',l:'红色'},{v:'warm',l:'暖色'},{v:'cool',l:'冷色'}]" :key="r.v" :value="r.v">{{ r.l }}</option>
-                            </select>
-                        </div>
-                        <button class="config-confirm-btn" @click="confirmShpConvert">开始转换</button>
-                    </div>
-                </div>
-                <div class="upload-card">
-                    <div class="card-title">3D Tiles 压缩包</div>
-                    <p class="card-desc">上传 tileset.json + .b3dm 文件的 ZIP 包。</p>
-                    <label class="upload-btn-3d secondary">
-                        <span class="btn-icon-3d">📦</span>
-                        <span>选择 3D Tiles ZIP</span>
-                        <input type="file" accept=".zip" style="display:none" @change="handle3DTilesUpload" />
-                    </label>
-                </div>
-                <div class="upload-card">
-                    <div class="card-title">3D Tiles URL</div>
-                    <p class="card-desc">直接输入 tileset.json 在线地址加载。</p>
-                    <div class="url-input-row">
-                        <input v-model="threeDTilesUrlInput" class="url-input" placeholder="https://.../tileset.json" @keyup.enter="loadUrlTileset" />
-                        <button class="url-btn" @click="loadUrlTileset" :disabled="!threeDTilesUrlInput.trim()">加载</button>
                     </div>
                 </div>
             </div>
@@ -374,10 +252,9 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useMessage } from '../composables/useMessage';
 import { useGisLoader } from '../composables/useGisLoader';
-import { useSharedResourceLoader } from '../composables/useSharedResourceLoader';
 import { usePositionCodeTool } from '../composables/map';
 import {
     applyRecursiveSelection,
@@ -398,8 +275,8 @@ import {
     apiAddressGeocode,
     apiReverseGeocodeWithFallback
 } from '../api';
+import { listPublishedThreeDLayers, resolveThreeDTilesUrl } from '../api/threed';
 import LayerPanel from './LayerPanel.vue';
-import SharedResourceTreeItem from './SharedResourceTreeItem.vue';
 import AmapAoiInjectDialog from './AmapAoiInjectDialog.vue';
 
 
@@ -435,27 +312,18 @@ const emit = defineEmits([
     'draw-point-by-coordinates',
     'draw-amap-aoi-from-json',
     'toggle-layer-crs',
-    'export-layer-data',
-    'upload-shp-3d',
-    'upload-3dtiles-zip',
-    'load-3dtiles-url'
+    'export-layer-data'
 ]);
 
 const fileInputRef = ref(null);
 const folderInputRef = ref(null);
 const message = useMessage();
 const gisLoader = useGisLoader();
-const sharedLoader = useSharedResourceLoader();
 const layerStore = useLayerStore();
 const attrStore = useAttrStore();
 const styleEditor = useStyleEditor();
 const activeTab = ref('layers');
-const uploadSubTab = ref('2d');  // 2d | 3d
-const threeDTilesUrlInput = ref('');
-const shpUploading = computed(() => layerStore.shpConverting);
-const shpStatusText = computed(() => layerStore.shpConverting ? '转换中...' : '');
 const isUploadDragging = ref(false);
-const lastScanAttempted = ref(false);
 const coordInputLon = ref('');
 const coordInputLat = ref('');
 const coordInputCRS = ref('wgs84');
@@ -573,6 +441,33 @@ const uploadProgressLabel = computed(() => {
     if (phase === 'error') return '导入失败';
     return '等待导入';
 });
+
+async function refreshPublishedThreeDLayers() {
+    try {
+        const payload = await listPublishedThreeDLayers();
+        const list = Array.isArray(payload?.data) ? payload.data : [];
+        const normalized = list
+            .map((item) => {
+                const id = `3d_pub_${String(item?.id || '').trim()}`;
+                const tilesetUrl = resolveThreeDTilesUrl(item?.tileset_url || '');
+                if (!item?.id || !tilesetUrl) return null;
+                return {
+                    id,
+                    name: String(item?.name || '3D 图层'),
+                    visible: false,
+                    tilesetUrl,
+                    description: String(item?.description || ''),
+                    featureCount: Number(item?.feature_count || 0),
+                    metadata: item?.metadata || {}
+                };
+            })
+            .filter(Boolean);
+
+        layerStore.syncPublishedThreeDLayers(normalized);
+    } catch {
+        layerStore.syncPublishedThreeDLayers([]);
+    }
+}
 
 const userLayerSyncKey = computed(() => {
     const layerItems = (props.userLayers || []).map((layer) => [
@@ -957,10 +852,20 @@ function resolveLayerActionsById(layerId) {
     return layerActionMap.value.get(id) || null;
 }
 
+function selectableLayerIds() {
+    const ids = new Set(availableLayerIds.value);
+    (layerStore.threeDLayers || []).forEach((layer) => {
+        if (layer?.disabled) return;
+        const id = String(layer?.id || '').trim();
+        if (id) ids.add(id);
+    });
+    return Array.from(ids);
+}
+
 function pruneMultiSelectedLayerIds() {
     multiSelectedLayerIds.value = pruneSelectedLayerIds(
         multiSelectedLayerIds.value,
-        availableLayerIds.value
+        selectableLayerIds()
     );
 }
 
@@ -970,7 +875,7 @@ function setNodeRecursiveSelection(nodeId, checked) {
         treeNodes: layerStore.layerTree || [],
         targetNodeId: nodeId,
         checked,
-        availableLayerIds: availableLayerIds.value
+        availableLayerIds: selectableLayerIds()
     });
 }
 
@@ -989,7 +894,7 @@ function setFolderRecursiveSelection(nodeId, checked) {
         treeNodes: layerStore.layerTree || [],
         targetNodeId: nodeId,
         checked,
-        availableLayerIds: availableLayerIds.value,
+        availableLayerIds: selectableLayerIds(),
         chunkSize: 180,
         shouldCancel: () => currentToken !== recursiveSelectionToken
     }).then((nextSelection) => {
@@ -1041,6 +946,10 @@ watch(
     { immediate: true }
 );
 
+onMounted(() => {
+    refreshPublishedThreeDLayers();
+});
+
 layerStore.bindHandlers({
     onReorder: (payload) => emit('reorder-user-layers', payload),
     onHighlightFeature: (payload) => emit('highlight-attribute-feature', payload),
@@ -1054,77 +963,6 @@ function triggerFileUpload() {
 
 function triggerFolderUpload() {
     folderInputRef.value?.click();
-}
-
-const shpFileToken = ref('');
-const shpFields = ref([]);
-const shpSelectedHeightField = ref('');
-const shpBaseColor = ref('#68c282');
-const shpOpacity = ref(1.0);
-const shpClassifyField = ref('');
-const shpColorRamp = ref('greens');
-const shpRecordCount = ref(0);
-const shpShowConfig = ref(false);
-
-async function handleShpUpload(event) {
-    const file = event.target?.files?.[0];
-    if (!file) return;
-    event.target.value = '';
-    shpUploading.value = true;
-    shpStatusText.value = '正在解析文件字段...';
-    shpShowConfig.value = false;
-    try {
-        const fd = new FormData(); fd.append('file', file);
-        const resp = await fetch('/api/3d/preview-shp', { method: 'POST', body: fd });
-        if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || '解析失败'); }
-        const data = await resp.json();
-        shpFileToken.value = data.file_token;
-        shpFields.value = data.fields;
-        shpRecordCount.value = data.record_count;
-        shpSelectedHeightField.value = data.suggested_height_field || '';
-        shpShowConfig.value = true;
-        shpUploading.value = false;
-        shpStatusText.value = '';
-    } catch (e) {
-        shpUploading.value = false;
-        shpStatusText.value = '';
-        message.error(e.message);
-    }
-}
-
-function confirmShpConvert() {
-    if (!shpFileToken.value) return;
-    shpShowConfig.value = false;
-    shpUploading.value = true;
-    shpStatusText.value = '正在转换...';
-    emit('upload-shp-3d', {
-        fileToken: shpFileToken.value,
-        heightField: shpSelectedHeightField.value,
-        baseColor: shpBaseColor.value,
-        opacity: shpOpacity.value,
-        classificationField: shpClassifyField.value,
-        colorRamp: shpColorRamp.value,
-    });
-}
-
-function handle3DTilesUpload(event) {
-    const file = event.target?.files?.[0];
-    if (!file) return;
-    event.target.value = '';
-    emit('upload-3dtiles-zip', { file });
-}
-
-function loadUrlTileset() {
-    const url = threeDTilesUrlInput.value.trim();
-    if (!url) return;
-    emit('load-3dtiles-url', { url });
-    threeDTilesUrlInput.value = '';
-}
-
-function setShpUploadStatus(uploading, statusText) {
-    shpUploading.value = uploading;
-    shpStatusText.value = statusText || '';
-    if (!uploading) shpShowConfig.value = false;
 }
 
 function openAttributeTable(layerId) {
@@ -1299,55 +1137,6 @@ function applyStyle() {
     }
 }
 
-/**
- * 扫描共享资源目录
- * 此方法触发一次性扫描，结果存储在 sharedLoader 的反应式状态中
- */
-async function scanSharedResources() {
-    try {
-        await sharedLoader.scanResources();
-        lastScanAttempted.value = true;
-        if (sharedLoader.hasResources.value) {
-            message.success(`发现 ${sharedLoader.resources.value.length} 个共享文件`);
-        } else {
-            message.info('未发现共享资源，请在 public/ShareDate 目录中添加数据文件');
-        }
-    } catch (error) {
-        message.error(`扫描共享资源失败: ${String(error)}`);
-    }
-}
-
-/**
- * 加载选中的共享资源
- * 复用现有的上传逻辑来导入数据
- * 
- * @param {Object} resource - 共享资源对象
- */
-async function loadSharedResource(resource) {
-    if (!resource || !resource.path) {
-        message.warning('资源信息不完整');
-        return;
-    }
-
-    try {
-        // 使用共享加载器将资源转换为 File 对象
-        const files = await sharedLoader.loadResourceAsFiles(resource.path);
-        
-        if (!files || files.length === 0) {
-            message.warning('无法加载该资源');
-            return;
-        }
-
-        // 显示加载中的提示
-        message.info(`正在加载共享资源: ${resource.name}`, { duration: 2000 });
-
-        // 复用上传逻辑来处理资源导入
-        // 这样可以保证共享资源与手动上传的资源拥有完全相同的处理流程
-        emit('upload-data', gisLoader.createUploadPayloadsFromFiles(files));
-    } catch (error) {
-        message.error(`加载共享资源失败: ${String(error)}`);
-    }
-}
 </script>
 
 <style scoped>
@@ -1361,7 +1150,6 @@ async function loadSharedResource(resource) {
 
 .eco-section,
 .style-panel,
-.shared-resource-card,
 .card,
 .upload-entry,
 .upload-card {
@@ -2256,91 +2044,6 @@ async function loadSharedResource(resource) {
     outline: none;
 }
 
-/* ===== 共享资源样式 ===== */
-.shared-resource-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.shared-resource-card {
-    padding: 11px;
-    backdrop-filter: blur(8px);
-}
-
-.shared-resource-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 8px;
-}
-
-.share-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    color: var(--neon-cyan);
-    background: var(--neon-cyan-dim);
-}
-
-.shared-resource-menu {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.shared-resource-btn {
-    border: 1px solid var(--border-subtle);
-    background: var(--surface-1);
-    color: var(--text-secondary);
-    border-radius: var(--radius-md);
-    padding: 8px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--duration-fast) var(--ease-spatial);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    min-height: 34px;
-}
-
-.shared-resource-btn:hover {
-    border-color: var(--border-active);
-    background: var(--surface-hover);
-    color: var(--neon-cyan);
-    transform: translateY(-1px);
-}
-
-.shared-resource-btn.loading {
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-.resource-tree-root {
-    max-height: 320px;
-    overflow-y: auto;
-    padding: 6px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: var(--surface-card-strong);
-}
-
-.resource-empty {
-    text-align: center;
-    padding: 12px 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-    font-style: italic;
-}
-
 .style-slider {
     accent-color: var(--neon-cyan);
 }
@@ -2404,182 +2107,7 @@ async function loadSharedResource(resource) {
 }
 
 /* ── Upload Tab Styles ── */
-.sub-tabs {
-    display: flex;
-    gap: 0;
-    margin-bottom: var(--space-md);
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-}
-.sub-tab {
-    flex: 1;
-    padding: 7px 12px;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-family: var(--font-body);
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: all var(--duration-fast) var(--ease-spatial);
-}
-.sub-tab.active {
-    background: var(--surface-1);
-    color: var(--neon-cyan);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
 .upload-tab-scroll {
     padding: var(--space-md);
-}
-
-.threed-upload-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-}
-
-.upload-card {
-    padding: var(--space-md);
-    background: var(--surface-0);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-}
-.upload-card .card-title {
-    font-family: var(--font-body);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--space-xs);
-}
-.upload-card .card-desc {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    line-height: 1.5;
-    margin-bottom: var(--space-sm);
-}
-.upload-card-howto {
-    border-color: rgba(71,215,198,0.3) !important;
-    background: rgba(71,215,198,0.04) !important;
-}
-.upload-card-howto .card-desc strong { color: var(--neon-cyan); }
-
-.upload-btn-3d {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: 10px 18px;
-    background: var(--neon-cyan-dim);
-    border: 1px solid var(--border-active);
-    border-radius: var(--radius-sm);
-    color: var(--neon-cyan);
-    font-family: var(--font-body);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--duration-fast) var(--ease-spatial);
-    width: 100%;
-    justify-content: center;
-}
-.upload-btn-3d:hover {
-    background: rgba(71, 215, 198, 0.22);
-    box-shadow: var(--neon-cyan-glow);
-}
-.upload-btn-3d.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-}
-.upload-btn-3d.secondary {
-    background: var(--neon-green-dim);
-    border-color: rgba(139, 209, 124, 0.28);
-    color: var(--neon-green);
-}
-.upload-btn-3d.secondary:hover {
-    background: rgba(139, 209, 124, 0.2);
-    box-shadow: var(--neon-green-glow);
-}
-
-.btn-icon-3d {
-    font-size: 16px;
-}
-
-.shp-status {
-    text-align: center;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--neon-cyan);
-    margin-top: var(--space-sm);
-    animation: shp-pulse 1.5s ease-in-out infinite;
-}
-
-.shp-config-panel {
-    margin-top: var(--space-md);
-    padding: var(--space-md);
-    background: var(--surface-0);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    display: flex; flex-direction: column; gap: var(--space-md);
-}
-.config-row { display: flex; flex-direction: column; gap: 4px; }
-.config-row label { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-muted); }
-.cfg-hint { color: var(--text-muted); font-weight: 400; }
-.config-select {
-    padding: 8px 12px; background: rgba(0,0,0,.3); border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm); color: var(--text-primary); font-size: var(--font-size-sm); outline: none;
-}
-.config-slider { width: 100%; accent-color: var(--neon-cyan); }
-.color-pick-row { display: flex; align-items: center; gap: var(--space-sm); }
-.color-input { width: 36px; height: 28px; border: none; border-radius: 4px; cursor: pointer; background: none; padding: 0; }
-.color-hex { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-muted); }
-.config-confirm-btn {
-    padding: 10px; background: rgba(71,215,198,0.15); border: 1px solid var(--border-active);
-    border-radius: var(--radius-sm); color: var(--neon-cyan); font-weight: 600; cursor: pointer;
-    transition: all var(--duration-fast);
-}
-.config-confirm-btn:hover { background: rgba(71,215,198,0.25); box-shadow: var(--neon-cyan-glow); }
-
-.url-input-row {
-    display: flex;
-    gap: var(--space-xs);
-}
-.url-input {
-    flex: 1;
-    padding: 8px 12px;
-    background: rgba(6, 11, 16, 0.5);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    outline: none;
-    transition: border-color var(--duration-fast);
-}
-.url-input:focus {
-    border-color: var(--neon-cyan);
-}
-.url-input::placeholder {
-    color: var(--text-muted);
-}
-.url-btn {
-    padding: 8px 14px;
-    background: var(--surface-1);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    color: var(--neon-cyan);
-    font-family: var(--font-body);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--duration-fast) var(--ease-spatial);
-}
-.url-btn:hover:not(:disabled) {
-    border-color: var(--border-active);
-    box-shadow: var(--neon-cyan-glow);
-}
-.url-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
 }
 </style>

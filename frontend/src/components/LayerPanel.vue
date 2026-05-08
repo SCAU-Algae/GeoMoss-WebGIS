@@ -56,6 +56,7 @@ function handleTreeAction(evt) {
     if (evt.type === 'toggle-folder-visibility') {
         const leaves = layerStore.getLayerLeafNodesByFolder(evt.nodeId);
         leaves.forEach((leaf) => {
+            if (leaf.disabled) return;
             emit('action', {
                 type: 'toggle-layer-visibility',
                 layerId: leaf.id,

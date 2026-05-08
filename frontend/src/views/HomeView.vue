@@ -10,13 +10,12 @@
  */
 import { ref, reactive, computed, watch, defineAsyncComponent, onMounted, onUnmounted, nextTick, h } from 'vue';
 import { useMessage } from '../composables/useMessage';
-import { useAttrStore, useWeatherStore, useAppStore, useCompassStore, useTOCStore, useLayerStore } from '../stores';
+import { useAttrStore, useWeatherStore, useAppStore, useTOCStore, useLayerStore } from '../stores';
 import { showLoading, hideLoading } from '../utils/loading';
 import { apiLogVisit } from '../api/backend';
 const message = useMessage();
 const attrStore = useAttrStore();
 const weatherStore = useWeatherStore();
-const compassStore = useCompassStore();
 const tocStore = useTOCStore();
 const layerStore = useLayerStore();
 
@@ -29,8 +28,12 @@ import TopBar from '../components/TopBar.vue';
 import ControlsPanel from '@/components/ControlsPanel.vue';
 import MapContainer from '../components/MapContainer.vue';
 import MagicCursor from '../components/MagicCursor.vue';
+import FloatingPanelFrame from '../components/FloatingPanelFrame.vue';
 import FloatingAccountPanel from '../components/UserCenter/FloatingAccountPanel.vue';
 import PersistentAnnouncementBar from '../components/PersistentAnnouncementBar.vue';
+import ToolboxPanel from '../components/TOCPanel.vue';
+import ToolSuitePanel from '../components/ToolSuitePanel.vue';
+import NewsPanel from '../components/NewsPanel.vue';
 import {
     Check as CheckIcon,
     Info as InfoIcon,
@@ -42,33 +45,15 @@ import {
 const CesiumContainer = ref(null);
 const cesiumContainerRef = ref(null);
 
-const SidePanelLoading = {
-    name: 'SidePanelLoading',
+const FloatingContentLoading = {
+    name: 'FloatingContentLoading',
     render() {
         return h('div', { class: 'sidepanel-loading-state' }, [
             h('div', { class: 'sidepanel-loading-spinner' }),
-            h('span', { class: 'sidepanel-loading-text' }, '侧边面板资源加载中...')
+            h('span', { class: 'sidepanel-loading-text' }, '浮窗资源加载中...')
         ]);
     }
 };
-
-// 异步导入：SidePanel 组件 (优化：延迟加载图片资源)
-const SidePanel = defineAsyncComponent({
-    loader: () => import('../components/SidePanel.vue'),
-    loadingComponent: SidePanelLoading,
-    delay: 0,
-    timeout: 15000,
-    onError(error, retry, fail, attempts) {
-        const text = String(error?.message || error || '');
-        const isStaleOptimizeDep = text.includes('Outdated Optimize Dep') || text.includes('Failed to fetch dynamically imported module');
-        if (isStaleOptimizeDep && attempts <= 1) {
-            retry();
-            return;
-        }
-        message.error('侧边面板加载失败，请刷新页面后重试。');
-        fail(error);
-    }
-});
 
 const WeatherPanelLoading = {
     name: 'WeatherPanelLoading',
@@ -115,10 +100,16 @@ const isWeatherBoardMode = ref(false);
 const shouldLoadWeatherChartPanel = ref(false);
 const isMagicMode = ref(false);
 const magicEffectData = ref('');
-const isSidePanelCollapsed = ref(true);
-const shouldLoadSidePanel = ref(false);
+const layerPanelOpen = ref(false);
+const toolsPanelOpen = ref(false);
+const newsPanelOpen = ref(false);
+const weatherPanelOpen = ref(false);
+const shouldLoadLayerPanel = ref(false);
+const shouldLoadToolsPanel = ref(false);
+const shouldLoadNewsPanel = ref(false);
+const shouldLoadWeatherFloatingPanel = ref(false);
 const sidePanelWarmupScheduled = ref(false);
-const activeSidePanelTab = ref('toolbox'); // 'info' | 'chat' | 'toolbox' | 'bus' | 'drive' | 'compass'
+const activeToolTab = ref('chat'); // 'chat' | 'bus' | 'drive' | 'fengshui'
 const userLayers = ref([]);
 const featureQueryResult = ref(null);
 const showQueryPanel = ref(false);
@@ -130,6 +121,36 @@ const activeFeature = ref({ key: 'info', label: '新闻' });
 const isAccountPanelOpen = ref(false);
 const isAccountPanelFullscreen = ref(false);
 const colorTheme = ref('dark');
+
+const TOOL_PANEL_TABS = {
+    chat: { title: 'AI 助手', subtitle: '对话与空间分析' },
+    bus: { title: '公交规划', subtitle: '起终点与线路步骤' },
+    drive: { title: '驾车规划', subtitle: '路线检索与地图联动' },
+    fengshui: { title: '风水分析', subtitle: 'DEM、水系与环境格局' }
+};
+
+const activeToolPanelMeta = computed(() => TOOL_PANEL_TABS[activeToolTab.value] || TOOL_PANEL_TABS.chat);
+const toolsPanelTitle = computed(() => activeToolPanelMeta.value.title);
+const toolsPanelSubtitle = computed(() => activeToolPanelMeta.value.subtitle);
+
+function bindLazyFloatingPanel(openRef, loadedRef, onClose = null) {
+    return computed({
+        get: () => openRef.value,
+        set: (open) => {
+            if (open) {
+                loadedRef.value = true;
+            } else if (typeof onClose === 'function') {
+                onClose();
+            }
+            openRef.value = Boolean(open);
+        }
+    });
+}
+
+const layerFloatingPanelOpen = bindLazyFloatingPanel(layerPanelOpen, shouldLoadLayerPanel);
+const toolsFloatingPanelOpen = bindLazyFloatingPanel(toolsPanelOpen, shouldLoadToolsPanel);
+const newsFloatingPanelOpen = bindLazyFloatingPanel(newsPanelOpen, shouldLoadNewsPanel);
+const weatherFloatingPanelOpen = bindLazyFloatingPanel(weatherPanelOpen, shouldLoadWeatherFloatingPanel);
 
 // 组件引用
 const mapContainerRef = ref(null);
@@ -209,72 +230,61 @@ function handleNewsChanged(newsIndex) {
     currentNewsIndex.value = newsIndex;
 }
 
-/** 切换侧边栏展开/收起 */
-function toggleSidePanel() {
-    // 首次展开时才加载SidePanel组件及其资源
-    if (isSidePanelCollapsed.value && !shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = !isSidePanelCollapsed.value;
-    if (isSidePanelCollapsed.value) {
-        compassStore.setPlacementMode(false);
-    }
-    message.soup();
+function closeCompetingFloatingPanels(target) {
+    if (target !== 'layer') layerPanelOpen.value = false;
+    if (target !== 'tools') toolsPanelOpen.value = false;
+    if (target !== 'news') newsPanelOpen.value = false;
+    if (target !== 'weather') weatherPanelOpen.value = false;
 }
 
-function stopCompassTransientInteractions() {
-    compassStore.setPlacementMode(false);
+function openLayerPanel() {
+    shouldLoadLayerPanel.value = true;
+    layerPanelOpen.value = true;
+    closeCompetingFloatingPanels('layer');
+}
+
+function openNewsPanel() {
+    shouldLoadNewsPanel.value = true;
+    newsPanelOpen.value = true;
+    closeCompetingFloatingPanels('news');
+    activeFeature.value = { key: 'info', label: '新闻' };
+}
+
+function openToolSuite(tab = 'chat') {
+    const next = String(tab || 'chat').trim();
+    activeToolTab.value = TOOL_PANEL_TABS[next] ? next : 'chat';
+    shouldLoadToolsPanel.value = true;
+    toolsPanelOpen.value = true;
+    closeCompetingFloatingPanels('tools');
 }
 
 /** 打开 AI 聊天面板 */
 function openChat() {
-    stopCompassTransientInteractions();
-    activeSidePanelTab.value = 'chat';
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = false;
+    openToolSuite('chat');
 }
 
 function openToolbox() {
-    stopCompassTransientInteractions();
-    activeSidePanelTab.value = 'toolbox';
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = false;
-}
-
-async function openCompassPanel() {
-    activeSidePanelTab.value = 'compass';
-    compassStore.setEnabled(true);
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = false;
-    await compassStore.ensureConfigLoaded();
+    openLayerPanel();
 }
 
 function openBusPlanner() {
-    stopCompassTransientInteractions();
-    activeSidePanelTab.value = 'bus';
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = false;
+    openToolSuite('bus');
 }
 
 function openDrivePlanner() {
-    stopCompassTransientInteractions();
-    activeSidePanelTab.value = 'drive';
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
-    }
-    isSidePanelCollapsed.value = false;
+    openToolSuite('drive');
 }
 
-function getMapUserLocation(enableHighAccuracy = true) {
-    return mapContainerRef.value?.getCurrentLocation?.(enableHighAccuracy);
+function openFengshuiAnalysis() {
+    openToolSuite('fengshui');
+}
+
+function getMapCenterForTools() {
+    return mapContainerRef.value?.getMapCenter?.();
+}
+
+function startStudyAreaDrawForTools(type) {
+    return mapContainerRef.value?.startStudyAreaDraw?.(type);
 }
 
 function startBusPointPick(type) {
@@ -317,22 +327,28 @@ function handleActivateFeature(feature) {
     activeFeature.value = feature || { key: 'info', label: '新闻' };
 }
 
-function handleSwitchSidePanelTab(tab) {
-    if (tab !== 'compass') {
-        stopCompassTransientInteractions();
-    }
-    activeSidePanelTab.value = tab;
+function handleSwitchToolTab(tab) {
+    const next = String(tab || 'chat').trim();
+    activeToolTab.value = TOOL_PANEL_TABS[next] ? next : 'chat';
 }
 
 function handleControlsOpenTab(tab) {
     const next = String(tab || '').trim();
     if (!next) return;
 
-    handleSwitchSidePanelTab(next);
-    if (!shouldLoadSidePanel.value) {
-        shouldLoadSidePanel.value = true;
+    if (next === 'toolbox') {
+        openLayerPanel();
+        return;
     }
-    isSidePanelCollapsed.value = false;
+    if (next === 'info' || next === 'news') {
+        openNewsPanel();
+        return;
+    }
+    if (next === 'weather') {
+        openWeatherPanel();
+        return;
+    }
+    openToolSuite(next);
 }
 
 function handleControlsMapInteraction(type) {
@@ -342,7 +358,7 @@ function handleControlsMapInteraction(type) {
 }
 
 function handleControlsShowAnalysis() {
-    message.info('分析功能入口已接入，后续可扩展缓冲区/最短路径专属面板。');
+    openFengshuiAnalysis();
 }
 
 async function handleControlsDistrictSelect(payload) {
@@ -483,25 +499,25 @@ function settleMapCoreLoading(payload = {}) {
     }
 }
 
-/** 主地图关键内容就绪后，消除加载状态并在空闲时预加载侧边面板资源。 */
+/** 主地图关键内容就绪后，消除加载状态并在空闲时预加载浮窗资源。 */
 function handleMapCoreReady() {
     settleMapCoreLoading();
 
-    // ========== Phase 1: 处理侧边面板预热 ==========
-    if (sidePanelWarmupScheduled.value || shouldLoadSidePanel.value) {
-        // 侧边面板已在加载或已加载，先执行 visitLog
+    // ========== Phase 1: 处理浮窗资源预热 ==========
+    if (sidePanelWarmupScheduled.value || shouldLoadLayerPanel.value) {
+        // 图层面板已在加载或已加载，先执行 visitLog
     } else {
         sidePanelWarmupScheduled.value = true;
 
-        const preloadSidePanel = () => {
-            if (!shouldLoadSidePanel.value) {
-                shouldLoadSidePanel.value = true;
+        const preloadFloatingPanels = () => {
+            if (!shouldLoadLayerPanel.value) {
+                shouldLoadLayerPanel.value = true;
             }
         };
 
         const queuePreload = () => {
             if (typeof window === 'undefined') return;
-            sidePanelWarmupTimer = window.setTimeout(preloadSidePanel, 900);
+            sidePanelWarmupTimer = window.setTimeout(preloadFloatingPanels, 900);
         };
 
         if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -520,7 +536,7 @@ function handleMapCoreReady() {
     }
 }
 
-/** 异步执行访问记录，不阻塞底图和侧边面板加载 */
+/** 异步执行访问记录，不阻塞底图和浮窗加载 */
 async function executeVisitLogAsync() {
     try {
         const visitPayload = await buildVisitLogPayload();
@@ -541,15 +557,15 @@ function handleMapCoreFailed(payload = {}) {
 
 /** 关闭 AI 聊天，切换回新闻模式 */
 function handleCloseChat() {
-    activeSidePanelTab.value = 'info';
+    toolsPanelOpen.value = false;
+    openNewsPanel();
     activeFeature.value = { key: 'info', label: '新闻' };
 }
 
 function openWeatherPanel() {
-    stopCompassTransientInteractions();
-    activeSidePanelTab.value = 'weather';
-    if (!shouldLoadSidePanel.value) shouldLoadSidePanel.value = true;
-    isSidePanelCollapsed.value = false;
+    shouldLoadWeatherFloatingPanel.value = true;
+    weatherPanelOpen.value = true;
+    closeCompetingFloatingPanels('weather');
     // Trigger map center weather query
     nextTick(() => {
         const center = mapContainerRef.value?.getMapCenter?.();
@@ -604,6 +620,13 @@ async function ensureCesiumLoaded() {
     }
 }
 
+async function ensureCesiumReady() {
+    await ensureCesiumLoaded();
+    await nextTick();
+    await nextTick();
+    return cesiumContainerRef.value || null;
+}
+
 /** 监听 3D 图层可见性变化，自动切换 2D/3D 视角并飞行 */
 watch(() => is3DMode.value, (entering3D) => {
     if (entering3D && !last3DMode) {
@@ -641,12 +664,22 @@ function handleInteraction(type) {
 }
 
 function isThreeDLayer(layerId) {
-    return typeof layerId === 'string' && layerId.startsWith('3d_');
+    const id = String(layerId || '').trim();
+    if (!id) return false;
+    return (layerStore.threeDLayers || []).some((layer) => String(layer?.id || '') === id)
+        || id.startsWith('3d_')
+        || id.startsWith('terrain_');
 }
 
-function handleToggleLayerVisibility({ layerId, visible }) {
+async function handleToggleLayerVisibility({ layerId, visible }) {
     if (isThreeDLayer(layerId)) {
-        cesiumContainerRef.value?.setThreeDLayerVisibility?.(layerId, visible);
+        layerStore.setThreeDLayerVisibility(layerId, visible);
+        if (visible) {
+            const cesium = await ensureCesiumReady();
+            cesium?.setThreeDLayerVisibility?.(layerId, true);
+            return;
+        }
+        cesiumContainerRef.value?.setThreeDLayerVisibility?.(layerId, false);
         return;
     }
     if (isDistrictLayer(layerId)) {
@@ -763,29 +796,6 @@ function handleToggleLayerCRS(payload) {
  */
 function handleExportLayerData(payload) {
     mapContainerRef.value?.exportLayerCoordinates?.(payload);
-}
-
-// ── 3D 上传事件转发到 CesiumContainer ──
-async function handleUploadShp3D(config) {
-    await ensureCesiumLoaded();
-    await nextTick();
-    await nextTick();
-    if (isSidePanelCollapsed.value) toggleSidePanel();
-    cesiumContainerRef.value?.handleShpTo3D?.(config);
-}
-async function handleUpload3DTilesZip({ file }) {
-    await ensureCesiumLoaded();
-    await nextTick();
-    await nextTick();
-    if (isSidePanelCollapsed.value) toggleSidePanel();
-    cesiumContainerRef.value?.handle3DTilesUpload?.({ target: { files: [file] } });
-}
-async function handleLoad3DTilesUrl({ url }) {
-    await ensureCesiumLoaded();
-    await nextTick();
-    await nextTick();
-    if (isSidePanelCollapsed.value) toggleSidePanel();
-    cesiumContainerRef.value?.load3DTilesUrl?.(url, { name: url.split('/').pop()?.replace('.json', '') || '3D模型' });
 }
 
 function handleUserLayersChange(layers) {
@@ -999,10 +1009,11 @@ onMounted(async () => {
 
         <!-- 顶部控制栏 -->
         <div class="top-section">
-            <TopBar :is-weather-board-mode="isWeatherBoardMode" :theme="colorTheme" @activate-magic="handleActivateMagic"
-                @open-chat="openChat" @open-toolbox="openToolbox" @open-compass="openCompassPanel"
-                @open-bus="openBusPlanner" @open-drive="openDrivePlanner" @toggle-weather-board="toggleWeatherBoardMode"
+            <TopBar :theme="colorTheme" @activate-magic="handleActivateMagic"
+                @open-chat="openChat" @open-toolbox="openToolbox"
+                @open-bus="openBusPlanner" @open-drive="openDrivePlanner"
                 @open-weather="openWeatherPanel"
+                @open-news="openNewsPanel"
                 @activate-feature="handleActivateFeature"
                 @toggle-account-center="handleToggleAccountPanel" @toggle-theme="toggleColorTheme" />
         </div>
@@ -1130,54 +1141,126 @@ onMounted(async () => {
                 </div>
             </div>
 
-            <!-- 侧边容器栏（右）-->
-            <div class="side-panel-wrapper"
-                :class="{ 'collapsed': isSidePanelCollapsed, 'weather-mode': isWeatherBoardMode }">
-                <!-- 使用v-if延迟加载SidePanel，避免初始化时加载大量图片资源 -->
-                <SidePanel v-if="shouldLoadSidePanel" :locationInfo="locationInfo" :selectedImage="selectedImage"
-                    :isCollapsed="isSidePanelCollapsed" :activeTab="activeSidePanelTab" :activeFeature="activeFeature"
-                    :userLayers="userLayers" :baseLayers="baseLayers" :toolboxOverview="toolboxOverview"
-                    :uploadProgress="uploadProgress" :latest-search-poi="latestSearchPoi"
-                    :get-user-location="getMapUserLocation" :start-bus-point-pick="startBusPointPick"
-                    :draw-route-on-map="drawRouteOnMap" :zoom-to-bus-route-step="zoomToBusRouteStep"
-                    :preview-bus-route-step="previewBusRouteStep"
-                    :clear-bus-route-step-preview="clearBusRouteStepPreview"
-                    :draw-drive-route-on-map="drawDriveRouteOnMap" :zoom-to-drive-route-step="zoomToDriveRouteStep"
-                    :preview-drive-route-step="previewDriveRouteStep"
-                    :clear-drive-route-step-preview="clearDriveRouteStepPreview" @upload-data="handleUploadData"
-                    @interaction="handleInteraction" @toggle-layer-visibility="handleToggleLayerVisibility"
-                    @change-layer-opacity="handleChangeLayerOpacity" @set-base-layer="handleSetBaseLayer"
-                    @toggle-base-layer-visibility="handleToggleBaseLayerVisibility"
-                    @toggle-layer-label-visibility="handleToggleLayerLabelVisibility" @set-layer-label-field="handleSetLayerLabelField" @zoom-layer="handleZoomLayer"
-                    @view-layer="handleViewLayer" @remove-layer="handleRemoveLayer"
-                    @reorder-user-layers="handleReorderUserLayers" @solo-layer="handleSoloLayer"
-                    @apply-style-template="handleApplyStyleTemplate" @update-draw-style="handleUpdateDrawStyle"
-                    @update-layer-style="handleUpdateLayerStyle"
-                    @highlight-attribute-feature="handleHighlightAttributeFeature"
-                    @zoom-attribute-feature="handleZoomAttributeFeature" @layer-selected="handleLayerSelected"
-                    @draw-point-by-coordinates="handleDrawPointByCoordinates"
-                    @draw-amap-aoi-from-json="handleDrawAmapAoiFromJson" @toggle-layer-crs="handleToggleLayerCRS"
-                    @export-layer-data="handleExportLayerData" @switch-tab="handleSwitchSidePanelTab"
-                    @news-changed="handleNewsChanged" @toggle-panel="toggleSidePanel" @close-chat="handleCloseChat"
-                    @upload-shp-3d="handleUploadShp3D" @upload-3dtiles-zip="handleUpload3DTilesZip"
-                    @load-3dtiles-url="handleLoad3DTilesUrl">
-                    <template v-slot:extra-content>
-                        <div class="extra-info">
-                            <h3>提示</h3>
-                            <p>缩放地图以查看更多细节</p>
-                        </div>
-                    </template>
-                </SidePanel>
-                <!-- 未加载时显示展开提示 -->
-                <div v-else class="panel-placeholder" @click="toggleSidePanel">
-                    <div class="placeholder-content">
-                        <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                        </svg>
-                        <span class="placeholder-text">展开</span>
-                    </div>
+            <!-- 独立浮窗：图层、工具、资讯、天气按任务心智拆开，避免互相遮挡和混用。 -->
+            <FloatingPanelFrame
+                v-model:open="layerFloatingPanelOpen"
+                class="floating-task-frame layer-floating-frame"
+                title="图层管理"
+                subtitle="底图、用户图层与三维图层"
+                launcher-label="图层"
+                :default-width="450"
+                :default-height="720"
+                :min-width="340"
+                :min-height="168"
+                launcher-top="42%"
+            >
+                <div class="side-floating-content">
+                    <ToolboxPanel
+                        v-if="shouldLoadLayerPanel"
+                        :userLayers="userLayers"
+                        :baseLayers="baseLayers"
+                        :overview="toolboxOverview"
+                        :uploadProgress="uploadProgress"
+                        :latest-search-poi="latestSearchPoi"
+                        @close="layerPanelOpen = false"
+                        @upload-data="handleUploadData"
+                        @interaction="handleInteraction"
+                        @toggle-layer-visibility="handleToggleLayerVisibility"
+                        @change-layer-opacity="handleChangeLayerOpacity"
+                        @set-base-layer="handleSetBaseLayer"
+                        @toggle-base-layer-visibility="handleToggleBaseLayerVisibility"
+                        @toggle-layer-label-visibility="handleToggleLayerLabelVisibility"
+                        @set-layer-label-field="handleSetLayerLabelField"
+                        @zoom-layer="handleZoomLayer"
+                        @view-layer="handleViewLayer"
+                        @remove-layer="handleRemoveLayer"
+                        @reorder-user-layers="handleReorderUserLayers"
+                        @solo-layer="handleSoloLayer"
+                        @apply-style-template="handleApplyStyleTemplate"
+                        @update-draw-style="handleUpdateDrawStyle"
+                        @update-layer-style="handleUpdateLayerStyle"
+                        @highlight-attribute-feature="handleHighlightAttributeFeature"
+                        @zoom-attribute-feature="handleZoomAttributeFeature"
+                        @layer-selected="handleLayerSelected"
+                        @draw-point-by-coordinates="handleDrawPointByCoordinates"
+                        @draw-amap-aoi-from-json="handleDrawAmapAoiFromJson"
+                        @toggle-layer-crs="handleToggleLayerCRS"
+                        @export-layer-data="handleExportLayerData"
+                    />
+                    <component :is="FloatingContentLoading" v-else />
                 </div>
-            </div>
+            </FloatingPanelFrame>
+
+            <FloatingPanelFrame
+                v-model:open="toolsFloatingPanelOpen"
+                class="floating-task-frame tools-floating-frame"
+                :title="toolsPanelTitle"
+                :subtitle="toolsPanelSubtitle"
+                launcher-label="工具"
+                :default-width="420"
+                :default-height="660"
+                :min-width="320"
+                :min-height="168"
+                launcher-top="54%"
+            >
+                <div class="side-floating-content">
+                    <ToolSuitePanel
+                        v-if="shouldLoadToolsPanel"
+                        :active-tab="activeToolTab"
+                        :start-bus-point-pick="startBusPointPick"
+                        :draw-route-on-map="drawRouteOnMap"
+                        :zoom-to-bus-route-step="zoomToBusRouteStep"
+                        :preview-bus-route-step="previewBusRouteStep"
+                        :clear-bus-route-step-preview="clearBusRouteStepPreview"
+                        :draw-drive-route-on-map="drawDriveRouteOnMap"
+                        :zoom-to-drive-route-step="zoomToDriveRouteStep"
+                        :preview-drive-route-step="previewDriveRouteStep"
+                        :clear-drive-route-step-preview="clearDriveRouteStepPreview"
+                        :get-map-center="getMapCenterForTools"
+                        :start-study-area-draw="startStudyAreaDrawForTools"
+                        @switch-tab="handleSwitchToolTab"
+                        @close-chat="handleCloseChat"
+                        @close="toolsPanelOpen = false"
+                    />
+                    <component :is="FloatingContentLoading" v-else />
+                </div>
+            </FloatingPanelFrame>
+
+            <FloatingPanelFrame
+                v-model:open="newsFloatingPanelOpen"
+                class="floating-task-frame news-floating-frame"
+                title="热点资讯"
+                subtitle="实时信息流"
+                launcher-label="资讯"
+                :default-width="420"
+                :default-height="620"
+                :min-width="320"
+                :min-height="168"
+                launcher-top="66%"
+            >
+                <div class="side-floating-content">
+                    <NewsPanel v-if="shouldLoadNewsPanel" @news-changed="handleNewsChanged" />
+                    <component :is="FloatingContentLoading" v-else />
+                </div>
+            </FloatingPanelFrame>
+
+            <FloatingPanelFrame
+                v-model:open="weatherFloatingPanelOpen"
+                class="floating-task-frame weather-floating-frame"
+                title="天气面板"
+                subtitle="实况、降雨与趋势"
+                launcher-label="天气"
+                :default-width="720"
+                :default-height="620"
+                :min-width="360"
+                :min-height="260"
+                launcher-top="78%"
+            >
+                <div class="side-floating-content">
+                    <component :is="WeatherChartPanel" v-if="shouldLoadWeatherFloatingPanel" />
+                    <component :is="FloatingContentLoading" v-else />
+                </div>
+            </FloatingPanelFrame>
         </div>
     </div>
 
@@ -1254,6 +1337,7 @@ onMounted(async () => {
     padding: 8px 10px 10px 0;
     box-sizing: border-box;
     overflow: clip;
+    position: relative;
     background:
         linear-gradient(90deg, rgba(255, 255, 255, 0.025), transparent 36%),
         var(--deep-0);
@@ -1308,6 +1392,70 @@ onMounted(async () => {
 .weather-board-surface {
     width: 100%;
     height: 100%;
+}
+
+.floating-task-frame {
+    inset: 8px 10px 10px 72px;
+    z-index: 2600;
+}
+
+.layer-floating-frame { z-index: 2610; }
+.tools-floating-frame { z-index: 2620; }
+.news-floating-frame { z-index: 2630; }
+.weather-floating-frame { z-index: 2640; }
+
+.side-floating-content {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    container-type: size;
+}
+
+:deep(.side-floating-content .info-panel) {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+}
+
+:deep(.side-floating-content .toggle-handle) {
+    display: none;
+}
+
+:deep(.side-floating-content .panel-content) {
+    min-width: 0;
+    height: 100%;
+}
+
+:deep(.side-floating-content .toolbox-content),
+:deep(.side-floating-content .weather-tab-content),
+:deep(.side-floating-content .info-content) {
+    min-height: 0;
+}
+
+@container (max-width: 420px), (max-height: 260px) {
+    :deep(.side-floating-content .active-feature-banner),
+    :deep(.side-floating-content .news-footer) {
+        display: none;
+    }
+
+    :deep(.side-floating-content .news-header-bar) {
+        padding: 10px 12px 6px;
+    }
+
+    :deep(.side-floating-content .news-platform-tabs) {
+        padding: 0 10px 8px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    :deep(.side-floating-content .news-card) {
+        padding: 8px 6px;
+    }
 }
 
 /* 用户中心面板 (由 HomeView 配置覆盖位置) */
@@ -1366,6 +1514,10 @@ onMounted(async () => {
     /* 隐藏控制面板 */
     .Control-panel {
         display: none;
+    }
+
+    .floating-task-frame {
+        inset: 8px;
     }
 }
 
@@ -1576,112 +1728,6 @@ onMounted(async () => {
     transform: translateY(20px) scale(0.95);
 }
 
-.side-panel-wrapper {
-    width: 408px;
-    flex-shrink: 0;
-    background: transparent;
-    border-radius: 0;
-    overflow: visible !important;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    transition:
-        width var(--duration-panel) var(--ease-spring-subtle),
-        height var(--duration-panel) var(--ease-spring-subtle);
-    z-index: 2;
-}
-
-.side-panel-wrapper.collapsed {
-    width: 0px;
-}
-
-/* 侧边栏占位符样式 */
-.panel-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    background: var(--glass-bg-heavy);
-    border-left: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
-    transition:
-        background-color var(--duration-normal) var(--ease-spatial),
-        border-color var(--duration-normal) var(--ease-spatial),
-        box-shadow var(--duration-normal) var(--ease-spatial),
-        transform var(--duration-normal) var(--ease-spatial);
-    position: relative;
-    overflow: hidden;
-}
-
-.panel-placeholder::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(71, 215, 198, 0.2), transparent);
-    transition: left var(--duration-slow) var(--ease-panel);
-}
-
-.panel-placeholder:hover {
-    background: var(--surface-hover);
-    border-left-color: var(--border-active);
-    box-shadow: inset 0 0 20px var(--neon-cyan-dim);
-}
-
-.panel-placeholder:hover::before {
-    left: 100%;
-}
-
-.panel-placeholder:active {
-    transform: scale(0.98);
-}
-
-.placeholder-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 6px;
-}
-
-.placeholder-icon {
-    width: 28px;
-    height: 28px;
-    color: var(--neon-cyan);
-    transition:
-        color var(--duration-normal) var(--ease-spatial),
-        filter var(--duration-normal) var(--ease-spatial),
-        transform var(--duration-normal) var(--ease-spatial);
-    filter: drop-shadow(0 2px 4px rgba(71, 215, 198, 0.22));
-}
-
-.panel-placeholder:hover .placeholder-icon {
-    color: var(--text-primary);
-    transform: translateX(-3px);
-    filter: drop-shadow(0 3px 6px rgba(71, 215, 198, 0.38));
-}
-
-.placeholder-text {
-    writing-mode: vertical-rl;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--neon-cyan);
-    letter-spacing: 0;
-    text-shadow: 0 1px 2px rgba(71, 215, 198, 0.16);
-    transition:
-        color var(--duration-normal) var(--ease-spatial),
-        text-shadow var(--duration-normal) var(--ease-spatial);
-}
-
-.panel-placeholder:hover .placeholder-text {
-    color: var(--text-primary);
-    text-shadow: 0 2px 4px rgba(71, 215, 198, 0.22);
-}
-
 .sidepanel-loading-state {
     width: 100%;
     height: 100%;
@@ -1750,44 +1796,6 @@ onMounted(async () => {
         grid-template-columns: 90px 1fr;
     }
 
-    .side-panel-wrapper {
-        width: 100%;
-        height: 40vh;
-        /* Fixed height for bottom panel on mobile */
-        flex: none;
-    }
-
-    .side-panel-wrapper.weather-mode {
-        height: 32vh;
-    }
-
-    .side-panel-wrapper.collapsed {
-        height: 0px;
-        width: 100%;
-    }
-
-    /* 移动端占位符横向布局 */
-    .placeholder-content {
-        flex-direction: row;
-        padding: 8px 16px;
-        justify-content: center;
-    }
-
-    .placeholder-icon {
-        width: 24px;
-        height: 24px;
-        transform: rotate(90deg);
-    }
-
-    .panel-placeholder:hover .placeholder-icon {
-        transform: rotate(90deg) translateY(-3px);
-    }
-
-    .placeholder-text {
-        writing-mode: horizontal-tb;
-        font-size: 14px;
-        letter-spacing: 1px;
-    }
 }
 
 .extra-info {

@@ -1,7 +1,7 @@
 <template>
     <div class="api-management-container">
         <div class="management-header">
-            <h1>🔐 API 管理后台</h1>
+            <h1>API 管理后台</h1>
             <p class="subtitle">查看和管理用户 API 调用统计与配额</p>
         </div>
 
@@ -14,6 +14,7 @@
                 :class="{ active: activeTab === tab.id }"
                 @click="activeTab = tab.id"
             >
+                <component :is="tab.icon" :size="15" />
                 {{ tab.label }}
             </button>
         </div>
@@ -38,32 +39,34 @@
                     <span class="spinner"></span> 加载中...
                 </div>
 
-                <table v-else-if="userStats.length > 0" class="data-table">
-                    <thead>
-                        <tr>
-                            <th>用户名</th>
-                            <th>角色</th>
-                            <th>调用次数</th>
-                            <th>活跃天数</th>
-                            <th>平均响应时间</th>
-                            <th>最后调用</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(stat, idx) in userStats" :key="idx" class="data-row">
-                            <td class="username">{{ stat.username }}</td>
-                            <td>
-                                <span class="role-badge" :class="stat.role.toLowerCase()">
-                                    {{ stat.role }}
-                                </span>
-                            </td>
-                            <td class="highlight">{{ stat.call_count }}</td>
-                            <td>{{ stat.active_days }}</td>
-                            <td>{{ stat.avg_response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
-                            <td class="timestamp">{{ formatTime(stat.last_called_at) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div v-else-if="userStats.length > 0" class="data-table-shell">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>用户名</th>
+                                <th>角色</th>
+                                <th>调用次数</th>
+                                <th>活跃天数</th>
+                                <th>平均响应时间</th>
+                                <th>最后调用</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(stat, idx) in userStats" :key="idx" class="data-row">
+                                <td class="username">{{ stat.username }}</td>
+                                <td>
+                                    <span class="role-badge" :class="getRoleClass(stat.role)">
+                                        {{ stat.role || 'unknown' }}
+                                    </span>
+                                </td>
+                                <td class="highlight">{{ stat.call_count }}</td>
+                                <td>{{ stat.active_days }}</td>
+                                <td>{{ stat.avg_response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
+                                <td class="timestamp">{{ formatTime(stat.last_called_at) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
                 <div v-else class="empty-state">暂无数据</div>
             </div>
 
@@ -85,35 +88,37 @@
                     <span class="spinner"></span> 加载中...
                 </div>
 
-                <table v-else-if="endpointStats.length > 0" class="data-table">
-                    <thead>
-                        <tr>
-                            <th>API 端点</th>
-                            <th>调用次数</th>
-                            <th>成功</th>
-                            <th>错误</th>
-                            <th>成功率</th>
-                            <th>平均响应时间</th>
-                            <th>最大/最小响应时间</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(stat, idx) in endpointStats" :key="idx" class="data-row">
-                            <td class="endpoint-name">{{ formatEndpoint(stat.api_endpoint) }}</td>
-                            <td class="highlight">{{ stat.call_count }}</td>
-                            <td class="success">{{ stat.success_count }}</td>
-                            <td class="error">{{ stat.error_count }}</td>
-                            <td class="percentage">
-                                {{ calcSuccessRate(stat.success_count, stat.call_count) }}%
-                            </td>
-                            <td>{{ stat.avg_response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
-                            <td class="response-range">
-                                {{ stat.max_response_time_ms?.toFixed(0) || 'N/A' }} /
-                                {{ stat.min_response_time_ms?.toFixed(0) || 'N/A' }} ms
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div v-else-if="endpointStats.length > 0" class="data-table-shell">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>API 端点</th>
+                                <th>调用次数</th>
+                                <th>成功</th>
+                                <th>错误</th>
+                                <th>成功率</th>
+                                <th>平均响应时间</th>
+                                <th>最大/最小响应时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(stat, idx) in endpointStats" :key="idx" class="data-row">
+                                <td class="endpoint-name">{{ formatEndpoint(stat.api_endpoint) }}</td>
+                                <td class="highlight">{{ stat.call_count }}</td>
+                                <td class="success">{{ stat.success_count }}</td>
+                                <td class="error">{{ stat.error_count }}</td>
+                                <td class="percentage">
+                                    {{ calcSuccessRate(stat.success_count, stat.call_count) }}%
+                                </td>
+                                <td>{{ stat.avg_response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
+                                <td class="response-range">
+                                    {{ stat.max_response_time_ms?.toFixed(0) || 'N/A' }} /
+                                    {{ stat.min_response_time_ms?.toFixed(0) || 'N/A' }} ms
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
                 <div v-else class="empty-state">暂无数据</div>
             </div>
 
@@ -126,20 +131,23 @@
                             v-model="logsFilter.username"
                             type="text"
                             placeholder="按用户名过滤..."
-                            @change="loadLogs"
+                            @change="resetLogsAndLoad"
                         />
                         <input
                             v-model="logsFilter.endpoint"
                             type="text"
                             placeholder="按 API 端点过滤..."
-                            @change="loadLogs"
+                            @change="resetLogsAndLoad"
                         />
-                        <select v-model.number="logsFilter.days" @change="loadLogs">
+                        <select v-model.number="logsFilter.days" @change="resetLogsAndLoad">
                             <option :value="7">最近 7 天</option>
                             <option :value="30">最近 30 天</option>
                             <option :value="90">最近 90 天</option>
                         </select>
-                        <button class="btn-refresh" @click="loadLogs">刷新</button>
+                        <button class="btn-refresh" @click="loadLogs">
+                            <refresh-cw-icon :size="14" />
+                            刷新
+                        </button>
                     </div>
                 </div>
 
@@ -147,43 +155,45 @@
                     <span class="spinner"></span> 加载中...
                 </div>
 
-                <table v-else-if="apiLogs.length > 0" class="data-table logs-table">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>用户</th>
-                            <th>角色</th>
-                            <th>API 端点</th>
-                            <th>状态码</th>
-                            <th>响应时间</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(log, idx) in apiLogs" :key="idx" class="data-row">
-                            <td class="timestamp">{{ formatTime(log.timestamp) }}</td>
-                            <td>{{ log.username }}</td>
-                            <td>
-                                <span class="role-badge" :class="log.role.toLowerCase()">
-                                    {{ log.role }}
-                                </span>
-                            </td>
-                            <td class="endpoint-name">{{ formatEndpoint(log.api_endpoint) }}</td>
-                            <td>
-                                <span class="status-code" :class="getStatusClass(log.status_code)">
-                                    {{ log.status_code }}
-                                </span>
-                            </td>
-                            <td>{{ log.response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div v-else-if="apiLogs.length > 0" class="data-table-shell">
+                    <table class="data-table logs-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>用户</th>
+                                <th>角色</th>
+                                <th>API 端点</th>
+                                <th>状态码</th>
+                                <th>响应时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(log, idx) in apiLogs" :key="idx" class="data-row">
+                                <td class="timestamp">{{ formatTime(log.timestamp) }}</td>
+                                <td>{{ log.username }}</td>
+                                <td>
+                                    <span class="role-badge" :class="getRoleClass(log.role)">
+                                        {{ log.role || 'unknown' }}
+                                    </span>
+                                </td>
+                                <td class="endpoint-name">{{ formatEndpoint(log.api_endpoint) }}</td>
+                                <td>
+                                    <span class="status-code" :class="getStatusClass(log.status_code)">
+                                        {{ log.status_code }}
+                                    </span>
+                                </td>
+                                <td>{{ log.response_time_ms?.toFixed(2) || 'N/A' }} ms</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
                 <!-- 分页控制 -->
-                <div v-if="apiLogs.length > 0" class="pagination">
+                <div v-if="!loadingLogs && apiLogs.length > 0" class="pagination">
                     <button
                         class="btn-paging"
                         :disabled="logsFilter.offset === 0"
-                        @click="logsFilter.offset = Math.max(0, logsFilter.offset - logsFilter.limit)"
+                        @click="moveLogsPage(-1)"
                     >
                         ← 上一页
                     </button>
@@ -194,13 +204,13 @@
                     <button
                         class="btn-paging"
                         :disabled="apiLogs.length < logsFilter.limit"
-                        @click="logsFilter.offset += logsFilter.limit"
+                        @click="moveLogsPage(1)"
                     >
                         下一页 →
                     </button>
                 </div>
 
-                <div v-else class="empty-state">暂无数据</div>
+                <div v-if="!loadingLogs && apiLogs.length === 0" class="empty-state">暂无数据</div>
             </div>
 
             <!-- 4. 配额配置 -->
@@ -231,7 +241,7 @@
                 </div>
 
                 <div class="quota-note">
-                    📝 <strong>说明：</strong> 配额通过后端环境变量配置，如需修改请编辑
+                    <strong>说明：</strong> 配额通过后端环境变量配置，如需修改请编辑
                     <code>GUEST_DAILY_API_QUOTA</code>、<code>REGISTERED_DAILY_API_QUOTA</code>
                     环境变量后重启后端服务。
                 </div>
@@ -250,16 +260,24 @@ import { ref, onMounted } from 'vue';
 import { apiAdminApiUsageByUser, apiAdminApiUsageByEndpoint, apiAdminApiLogs, apiAdminQuotaConfig } from '../../api/backend';
 import { useMessage } from '../../composables/useMessage';
 import ApiKeysManagementPanel from './ApiKeysManagementPanel.vue';
+import {
+    BarChart3 as BarChart3Icon,
+    Gauge as GaugeIcon,
+    KeyRound as KeyRoundIcon,
+    Link2 as Link2Icon,
+    RefreshCw as RefreshCwIcon,
+    ScrollText as ScrollTextIcon,
+} from 'lucide-vue-next';
 
 const message = useMessage();
 
 const activeTab = ref('by-user');
 const tabs = [
-    { id: 'by-user', label: '📊 用户统计' },
-    { id: 'by-endpoint', label: '🔗 端点统计' },
-    { id: 'logs', label: '📝 调用日志' },
-    { id: 'quota', label: '⚙️ 配额配置' },
-    { id: 'api-keys', label: '🔑 密钥管理' },
+    { id: 'by-user', label: '用户统计', icon: BarChart3Icon },
+    { id: 'by-endpoint', label: '端点统计', icon: Link2Icon },
+    { id: 'logs', label: '调用日志', icon: ScrollTextIcon },
+    { id: 'quota', label: '配额配置', icon: GaugeIcon },
+    { id: 'api-keys', label: '密钥管理', icon: KeyRoundIcon },
 ];
 
 // 用户统计
@@ -331,6 +349,10 @@ function getRoleLabel(role) {
     return labels[role] || role;
 }
 
+function getRoleClass(role) {
+    return String(role || 'unknown').toLowerCase();
+}
+
 async function loadUserStats() {
     loadingUserStats.value = true;
     try {
@@ -373,6 +395,21 @@ async function loadLogs() {
     }
 }
 
+async function resetLogsAndLoad() {
+    logsFilter.value.offset = 0;
+    await loadLogs();
+}
+
+async function moveLogsPage(direction) {
+    const nextOffset = Math.max(
+        0,
+        logsFilter.value.offset + direction * logsFilter.value.limit,
+    );
+    if (nextOffset === logsFilter.value.offset) return;
+    logsFilter.value.offset = nextOffset;
+    await loadLogs();
+}
+
 async function loadQuotaConfig() {
     loadingQuota.value = true;
     try {
@@ -395,381 +432,514 @@ onMounted(async () => {
 
 <style scoped>
 .api-management-container {
-    padding: 0;
     width: 100%;
-    color: var(--acc-text-strong, #214a31);
+    min-width: 0;
+    color: var(--text-primary);
 }
 
 .management-header {
     display: none;
 }
 
-/* Tabs Navigation */
 .tabs-nav {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-bottom: 20px;
-    border-bottom: 1px solid rgba(76, 175, 80, 0.2);
-    padding-bottom: 10px;
+    margin-bottom: 14px;
+    padding: 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-card);
+    box-shadow: var(--shadow-button);
 }
 
 .tab-btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.4);
-    color: var(--acc-text-soft, #5d7f6a);
+    min-height: 38px;
+    padding: 0 13px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: var(--text-secondary);
+    background: var(--surface-1);
     cursor: pointer;
     font-size: 13px;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    border: 1px solid transparent;
+    font-weight: 700;
+    transition:
+        background var(--duration-fast) var(--ease-spatial),
+        border-color var(--duration-fast) var(--ease-spatial),
+        color var(--duration-fast) var(--ease-spatial),
+        box-shadow var(--duration-fast) var(--ease-spatial),
+        transform var(--duration-fast) var(--ease-spatial);
 }
 
 .tab-btn:hover {
-    color: var(--acc-text-main, #2c5f3e);
-    background: rgba(91, 207, 137, 0.15);
+    color: var(--neon-cyan);
+    border-color: var(--border-active);
+    background: var(--surface-hover);
+    transform: translateY(-1px);
 }
 
 .tab-btn.active {
-    color: white;
-    background: linear-gradient(135deg, #6fca7a 0%, #4caf50 100%);
-    box-shadow: 0 4px 10px rgba(58, 129, 76, 0.2);
+    color: var(--neon-cyan);
+    border-color: var(--border-glow);
+    background: var(--neon-cyan-dim);
+    box-shadow: var(--neon-cyan-glow);
 }
 
-/* Tab Content */
+.tab-btn:focus-visible,
+.btn-refresh:focus-visible,
+.btn-paging:focus-visible,
+.filter-controls select:focus-visible,
+.filter-controls input:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+}
+
+.tabs-content {
+    min-width: 0;
+}
+
 .tab-panel {
-    background: rgba(255, 255, 255, 0.6);
-    border: 1px solid rgba(76, 175, 80, 0.15);
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 4px 16px rgba(49, 111, 69, 0.05);
+    min-width: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    background: var(--surface-card);
+    box-shadow: var(--shadow-panel);
 }
 
 .panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    gap: 12px;
+    margin-bottom: 14px;
 }
 
 .panel-header h2 {
     margin: 0;
     font-size: 16px;
-    color: var(--acc-text-strong, #214a31);
+    line-height: 1.35;
+    color: var(--text-primary);
+    font-weight: 700;
 }
 
 .filter-controls {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+    justify-content: flex-end;
     flex-wrap: wrap;
 }
 
 .filter-controls label {
-    font-weight: 500;
-    color: var(--acc-text-main, #2c5f3e);
+    color: var(--text-secondary);
     font-size: 13px;
+    font-weight: 600;
 }
 
 .filter-controls select,
 .filter-controls input {
-    padding: 6px 12px;
-    border: 1px solid rgba(76, 175, 80, 0.3);
-    border-radius: 8px;
+    min-height: 38px;
+    min-width: 132px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 10px;
+    color: var(--text-primary);
+    background: rgba(6, 11, 16, 0.62);
+    box-sizing: border-box;
     font-size: 13px;
-    background: rgba(255, 255, 255, 0.9);
-    color: #333;
-    outline: none;
-    transition: border-color 0.2s;
+    transition: border-color var(--duration-fast) var(--ease-spatial), box-shadow var(--duration-fast) var(--ease-spatial), background var(--duration-fast) var(--ease-spatial);
+}
+
+.filter-controls input::placeholder {
+    color: var(--text-muted);
 }
 
 .filter-controls select:focus,
 .filter-controls input:focus {
-    border-color: #59b66a;
-    box-shadow: 0 0 0 3px rgba(89, 182, 106, 0.15);
+    outline: none;
+    border-color: var(--border-active);
+    background: var(--surface-card-strong);
+    box-shadow: var(--shadow-focus);
+}
+
+.filter-controls select option {
+    background: var(--deep-2);
+    color: var(--text-primary);
 }
 
 .btn-refresh {
-    padding: 6px 16px;
-    background: linear-gradient(135deg, #6fca7a 0%, #4caf50 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    min-height: 38px;
+    padding: 0 13px;
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: var(--neon-cyan);
+    background: var(--neon-cyan-dim);
     cursor: pointer;
-    font-weight: 500;
     font-size: 13px;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 6px rgba(58, 129, 76, 0.2);
+    font-weight: 750;
+    transition: transform var(--duration-fast) var(--ease-spatial), box-shadow var(--duration-fast) var(--ease-spatial), background var(--duration-fast) var(--ease-spatial);
 }
 
 .btn-refresh:hover {
-    background: linear-gradient(135deg, #7fd489 0%, #57b862 100%);
     transform: translateY(-1px);
+    background: var(--surface-hover);
+    box-shadow: var(--neon-cyan-glow);
 }
 
-/* Data Table */
-.data-table-wrapper {
+.data-table-shell {
+    width: 100%;
+    max-width: 100%;
     overflow-x: auto;
-    border-radius: 8px;
-    border: 1px solid rgba(76, 175, 80, 0.15);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-button);
 }
 
 .data-table {
     width: 100%;
+    min-width: 760px;
     border-collapse: collapse;
     font-size: 13px;
-    background: rgba(255, 255, 255, 0.4);
+    background: transparent;
+}
+
+.logs-table {
+    min-width: 900px;
 }
 
 .data-table thead {
-    background: rgba(76, 175, 80, 0.1);
-    border-bottom: 2px solid rgba(76, 175, 80, 0.2);
+    background: var(--neon-cyan-dim);
+    border-bottom: 1px solid var(--border-active);
 }
 
 .data-table th {
     padding: 12px;
     text-align: left;
-    font-weight: 600;
-    color: var(--acc-text-strong, #214a31);
+    font-weight: 700;
+    color: var(--neon-cyan);
+    white-space: nowrap;
 }
 
 .data-table td {
     padding: 12px;
-    border-bottom: 1px solid rgba(76, 175, 80, 0.1);
-    color: #444;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.data-row {
+    transition: background var(--duration-fast) var(--ease-spatial);
 }
 
 .data-row:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(71, 215, 198, 0.06);
 }
 
 .username {
-    font-weight: 600;
-    color: var(--acc-text-main, #2c5f3e);
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 .endpoint-name {
-    font-family: ''Courier New'', monospace;
-    color: #444;
-    word-break: break-all;
-    background: rgba(76, 175, 80, 0.08);
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.role-badge {
-    display: inline-block;
-    padding: 4px 8px;
+    display: inline-flex;
+    max-width: 260px;
+    border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
+    padding: 3px 7px;
+    color: var(--text-primary);
+    background: rgba(6, 11, 16, 0.42);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    word-break: break-all;
 }
 
-.role-badge.guest { background: rgba(33, 150, 243, 0.15); color: #1976d2; }
-.role-badge.registered { background: rgba(76, 175, 80, 0.15); color: #388e3c; }
-.role-badge.admin { background: rgba(255, 152, 0, 0.15); color: #f57c00; }
+.role-badge,
+.status-code {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+}
+
+.role-badge.guest {
+    color: var(--accent-blue);
+    background: var(--accent-blue-dim);
+    border-color: rgba(106, 169, 255, 0.28);
+}
+
+.role-badge.registered {
+    color: var(--neon-cyan);
+    background: var(--neon-cyan-dim);
+    border-color: var(--border-active);
+}
+
+.role-badge.admin {
+    color: var(--accent-amber);
+    background: var(--accent-amber-dim);
+    border-color: rgba(246, 173, 85, 0.3);
+}
 
 .highlight {
-    color: #3c8d4c;
+    color: var(--neon-cyan);
+    font-weight: 800;
+}
+
+.timestamp,
+.response-range {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.success {
+    color: var(--neon-green);
     font-weight: 700;
 }
 
-.timestamp {
-    color: var(--acc-text-soft, #5d7f6a);
-    font-size: 12px;
+.error {
+    color: var(--accent-rose);
+    font-weight: 700;
 }
-
-.success { color: #388e3c; font-weight: 600; }
-.error { color: #d32f2f; font-weight: 600; }
 
 .percentage {
-    font-weight: 600;
-    color: #555;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
-.response-range {
-    font-size: 12px;
-    color: var(--acc-text-soft, #5d7f6a);
+.status-code.success {
+    color: var(--neon-green);
+    background: var(--neon-green-dim);
+    border-color: rgba(22, 242, 179, 0.24);
 }
 
-.status-code {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 12px;
+.status-code.client-error {
+    color: var(--accent-amber);
+    background: var(--accent-amber-dim);
+    border-color: rgba(246, 173, 85, 0.24);
 }
 
-.status-code.success { background: rgba(76, 175, 80, 0.15); color: #1b5e20; }
-.status-code.client-error { background: rgba(255, 87, 34, 0.15); color: #bf360c; }
-.status-code.server-error { background: rgba(244, 67, 54, 0.15); color: #b71c1c; }
-.status-code.info { background: rgba(33, 150, 243, 0.15); color: #0d47a1; }
+.status-code.server-error {
+    color: var(--accent-rose);
+    background: var(--accent-rose-dim);
+    border-color: rgba(245, 101, 101, 0.24);
+}
+
+.status-code.info {
+    color: var(--accent-blue);
+    background: var(--accent-blue-dim);
+    border-color: rgba(106, 169, 255, 0.24);
+}
+
+.loading-state,
+.empty-state {
+    min-height: 128px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 10px;
+    padding: 28px;
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--surface-1);
+    font-size: 13px;
+    text-align: center;
+}
 
 .loading-state {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 40px;
-    color: var(--acc-text-soft, #5d7f6a);
 }
 
 .spinner {
-    display: inline-block;
     width: 18px;
     height: 18px;
-    border: 2px solid rgba(76, 175, 80, 0.2);
-    border-top: 2px solid #4caf50;
+    border: 2px solid var(--neon-cyan-dim);
+    border-top: 2px solid var(--neon-cyan);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-right: 10px;
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.empty-state {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--acc-text-soft, #5d7f6a);
-    font-size: 13px;
+    to { transform: rotate(360deg); }
 }
 
 .pagination {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 16px;
-    margin-top: 20px;
-    padding-top: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
 }
 
 .btn-paging {
-    padding: 6px 16px;
-    background: white;
-    border: 1px solid rgba(76, 175, 80, 0.3);
-    border-radius: 6px;
+    min-height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--surface-1);
     cursor: pointer;
-    font-weight: 500;
-    color: var(--acc-text-strong, #214a31);
-    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 650;
+    transition: background var(--duration-fast) var(--ease-spatial), border-color var(--duration-fast) var(--ease-spatial), color var(--duration-fast) var(--ease-spatial);
 }
 
 .btn-paging:hover:not(:disabled) {
-    background: rgba(76, 175, 80, 0.1);
-    border-color: #4caf50;
+    color: var(--neon-cyan);
+    border-color: var(--border-active);
+    background: var(--neon-cyan-dim);
 }
 
 .btn-paging:disabled {
-    opacity: 0.5;
+    opacity: 0.48;
     cursor: not-allowed;
-    background: transparent;
 }
 
 .page-info {
-    color: var(--acc-text-main, #2c5f3e);
+    color: var(--text-secondary);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .quota-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 16px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
 }
 
 .quota-card {
-    background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(76, 175, 80, 0.2);
-    border-radius: 12px;
-    padding: 20px;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 12px rgba(49, 111, 69, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    background: var(--surface-1);
+    box-shadow: var(--shadow-button);
+    transition: border-color var(--duration-fast) var(--ease-spatial), background var(--duration-fast) var(--ease-spatial);
 }
 
 .quota-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(49, 111, 69, 0.1);
+    border-color: var(--border-active);
+    background: var(--surface-hover);
 }
 
 .quota-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    border-bottom: 1px solid rgba(76, 175, 80, 0.1);
+    gap: 10px;
+    margin-bottom: 12px;
     padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-subtle);
 }
 
 .quota-header h3 {
     margin: 0;
     font-size: 15px;
-    color: var(--acc-text-strong, #214a31);
+    color: var(--text-primary);
 }
 
 .quota-body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    display: grid;
+    gap: 10px;
 }
 
 .quota-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
 }
 
 .quota-item label {
-    color: var(--acc-text-soft, #5d7f6a);
+    color: var(--text-secondary);
     font-size: 13px;
 }
 
 .quota-value {
-    font-size: 16px;
-    font-weight: 700;
-    color: #4caf50;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--neon-cyan);
 }
 
 .quota-note {
-    background: rgba(255, 243, 224, 0.6);
-    border-left: 4px solid #ffb300;
-    padding: 12px 16px;
-    border-radius: 8px;
-    color: #5d4d23;
+    border: 1px solid rgba(246, 173, 85, 0.28);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    color: var(--text-secondary);
+    background: var(--accent-amber-dim);
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
+}
+
+.quota-note strong {
+    color: var(--accent-amber);
 }
 
 .quota-note code {
-    background: rgba(255, 255, 255, 0.8);
+    display: inline-flex;
+    margin: 0 2px;
     padding: 2px 6px;
-    border-radius: 4px;
-    font-family: ''Courier New'', monospace;
-    font-weight: 600;
+    border-radius: 5px;
+    color: var(--text-primary);
+    background: rgba(6, 11, 16, 0.42);
+    border: 1px solid var(--border-subtle);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-weight: 700;
 }
 
 @media (max-width: 768px) {
+    .tabs-nav {
+        padding: 6px;
+    }
+
+    .tab-btn {
+        flex: 1 1 calc(50% - 8px);
+    }
+
+    .tab-panel {
+        padding: 12px;
+    }
+
     .panel-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 12px;
     }
 
     .filter-controls {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .filter-controls select,
+    .filter-controls input,
+    .btn-refresh {
         width: 100%;
     }
 
     .data-table {
         font-size: 12px;
-    }
-
-    .tabs-nav {
-        flex-wrap: wrap;
     }
 
     .quota-grid {

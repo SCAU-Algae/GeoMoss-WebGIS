@@ -2,7 +2,14 @@
  * 底图容灾功能库
  * 职责：底图切换验证、加载监测、异常降级策略。
  */
-export function createBasemapResilience({ message }) {
+export function createBasemapResilience({ message, fallbackOptions = [] }) {
+    const resolveFallbackOptions = (currentLayerId) => {
+        const current = String(currentLayerId || '').trim();
+        return (Array.isArray(fallbackOptions) ? fallbackOptions : [])
+            .map((item) => String(item || '').trim())
+            .filter((item, index, list) => item && item !== current && list.indexOf(item) === index);
+    };
+
     /**
      * [改进] 验证底图加载状态
      * - 前置检查立即返回（同步）
@@ -85,10 +92,9 @@ export function createBasemapResilience({ message }) {
     };
 
     const createBaseLayerFallbackManager = (layerId, isDefaultBaseLayer) => {
-        const FALLBACK_OPTIONS = ['tianDiTu', 'local'];
-
+        const options = resolveFallbackOptions(layerId);
         let fallbackAttempts = 0;
-        const maxFallbackAttempts = FALLBACK_OPTIONS.length;
+        const maxFallbackAttempts = options.length;
         let lastFallbackKey = null;
 
         return {
@@ -98,7 +104,7 @@ export function createBasemapResilience({ message }) {
                     return null;
                 }
 
-                const nextOption = FALLBACK_OPTIONS[fallbackAttempts];
+                const nextOption = options[fallbackAttempts];
                 lastFallbackKey = nextOption;
                 fallbackAttempts++;
                 return nextOption;

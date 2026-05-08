@@ -32,6 +32,21 @@ type StandardLayerCapabilities = {
     remove?: boolean;
 };
 
+type ThreeDLayerRecord = {
+    id: string;
+    name: string;
+    visible: boolean;
+    layerKind?: '3dtiles' | 'terrain';
+    available?: boolean;
+    disabled?: boolean;
+    tilesetUrl?: string;
+    tileUrlTemplate?: string;
+    bounds?: number[];
+    description?: string;
+    featureCount?: number;
+    metadata?: Record<string, any>;
+};
+
 type StandardTOCItem = {
     id?: string;
     name?: string;
@@ -609,6 +624,7 @@ function buildLayerTree({
     uploadLayers,
     districtLayers,
     threeDLayers,
+    hasThreeDLayerCatalog,
     hasDrawCard,
     drawCount,
     expandedState
@@ -618,7 +634,8 @@ function buildLayerTree({
     searchLayers: LayerStoreLayer[];
     uploadLayers: LayerStoreLayer[];
     districtLayers: any[];
-    threeDLayers: { id: string; name: string; visible: boolean }[];
+    threeDLayers: ThreeDLayerRecord[];
+    hasThreeDLayerCatalog?: boolean;
     hasDrawCard: boolean;
     drawCount: number;
     expandedState: Record<string, boolean>;
@@ -722,8 +739,17 @@ function buildLayerTree({
         }));
     }
 
-    if (threeDLayers.length) {
-        const threeDChildren = threeDLayers.map((item) => toThreeDLayerNode(item, 1));
+    if (hasThreeDLayerCatalog || threeDLayers.length) {
+        const threeDChildren = threeDLayers.length
+            ? threeDLayers.map((item) => toThreeDLayerNode(item, 1))
+            : [toThreeDLayerNode({
+                id: '3d_unavailable',
+                name: '暂无可用 3D 图层',
+                visible: false,
+                available: false,
+                disabled: true,
+                featureCount: 0
+            }, 1)];
         tree.push(folderNode({
             id: 'folder-3d',
             name: '3D 图层',
@@ -736,7 +762,9 @@ function buildLayerTree({
     return tree;
 }
 
-function toThreeDLayerNode(item: { id: string; name: string; visible: boolean }, level: number): any {
+function toThreeDLayerNode(item: ThreeDLayerRecord, level: number): any {
+    const disabled = item.disabled === true || item.available === false;
+    const layerKind = item.layerKind === 'terrain' ? 'terrain' : '3dtiles';
     const capabilities = {
         attribute: false,
         style: false,
@@ -749,8 +777,8 @@ function toThreeDLayerNode(item: { id: string; name: string; visible: boolean },
         canExportGeoJSON: false,
         canExportKML: false,
         openAoiPanel: false,
-        zoom: true,
-        remove: true
+        zoom: !disabled,
+        remove: false
     };
 
     return {
@@ -759,15 +787,16 @@ function toThreeDLayerNode(item: { id: string; name: string; visible: boolean },
         displayName: formatLayerDisplayName(item.name),
         type: 'layer',
         visible: item.visible !== false,
+        disabled,
         children: [],
         expanded: false,
         level,
-        featureCount: 0,
+        featureCount: Number(item.featureCount || 0),
         showCheckbox: true,
         raw: item,
-        layerType: '3dtiles',
+        layerType: layerKind,
         sourceType: '3d',
-        format: '3dtiles',
+        format: layerKind,
         opacity: 1,
         selected: false,
         parentId: 'folder-3d',
@@ -785,8 +814,8 @@ function toThreeDLayerNode(item: { id: string; name: string; visible: boolean },
             canExportGeoJSON: false,
             canExportKML: false,
             openAoiPanel: false,
-            zoom: true,
-            remove: true,
+            zoom: !disabled,
+            remove: false,
             removeTip: '移除',
             zoomEvent: 'zoom-layer',
             zoomPayload: { layerId: item.id },
@@ -821,20 +850,28 @@ export const useLayerStore = defineStore('layerStore', () => {
         'folder-3d': true
     });
 
-    const threeDLayers = ref<{ id: string; name: string; visible: boolean }[]>([]);
+    const threeDLayers = ref<ThreeDLayerRecord[]>([]);
+    const hasThreeDLayerCatalog = ref(true);
     const threeDLayerStateKey = computed(() => (
         threeDLayers.value.map((item) => `${item.id}:${item.visible ? 1 : 0}`).join('|')
     ));
-    const shpConverting = ref(false);  // 共享的 SHP 上传状态
-
-    function registerThreeDLayer(item: { id: string; name: string; visible?: boolean }): void {
+    function registerThreeDLayer(item: ThreeDLayerRecord): void {
         const id = String(item?.id || '').trim();
         if (!id) return;
         const existingIdx = threeDLayers.value.findIndex((l) => l.id === id);
         const record = {
             id,
             name: String(item?.name || '').trim() || '3D 图层',
-            visible: item?.visible !== false
+            visible: item?.visible === true,
+            layerKind: item?.layerKind === 'terrain' ? 'terrain' : '3dtiles',
+            available: item?.available !== false,
+            disabled: item?.disabled === true || item?.available === false,
+            tilesetUrl: String(item?.tilesetUrl || ''),
+            tileUrlTemplate: String(item?.tileUrlTemplate || ''),
+            bounds: Array.isArray(item?.bounds) ? item.bounds.map(Number).filter(Number.isFinite) : [],
+            description: String(item?.description || ''),
+            featureCount: Number(item?.featureCount || 0),
+            metadata: item?.metadata && typeof item.metadata === 'object' ? { ...item.metadata } : {}
         };
         if (existingIdx >= 0) {
             threeDLayers.value.splice(existingIdx, 1, record);
@@ -845,13 +882,39 @@ export const useLayerStore = defineStore('layerStore', () => {
 
     function setThreeDLayerVisibility(id: string, visible: boolean): void {
         const layer = threeDLayers.value.find((l) => l.id === id);
-        if (!layer) return;
+        if (!layer || layer.disabled) return;
         layer.visible = !!visible;
     }
 
     function unregisterThreeDLayer(id: string): void {
         const idx = threeDLayers.value.findIndex((l) => l.id === id);
         if (idx >= 0) threeDLayers.value.splice(idx, 1);
+    }
+
+    function syncPublishedThreeDLayers(items: ThreeDLayerRecord[] = []): void {
+        const previousVisibility = new Map(threeDLayers.value.map((layer) => [layer.id, !!layer.visible]));
+        const next = Array.isArray(items) ? items : [];
+        threeDLayers.value = next
+            .map((item) => {
+                const id = String(item?.id || '').trim();
+                if (!id) return null;
+                return {
+                    id,
+                    name: String(item?.name || '').trim() || '3D 图层',
+                    visible: item?.visible === true || previousVisibility.get(id) === true,
+                    layerKind: item?.layerKind === 'terrain' ? 'terrain' : '3dtiles',
+                    available: item?.available !== false,
+                    disabled: item?.disabled === true || item?.available === false,
+                    tilesetUrl: String(item?.tilesetUrl || ''),
+                    tileUrlTemplate: String(item?.tileUrlTemplate || ''),
+                    bounds: Array.isArray(item?.bounds) ? item.bounds.map(Number).filter(Number.isFinite) : [],
+                    description: String(item?.description || ''),
+                    featureCount: Number(item?.featureCount || 0),
+                    metadata: item?.metadata && typeof item.metadata === 'object' ? { ...item.metadata } : {}
+                };
+            })
+            .filter(Boolean) as ThreeDLayerRecord[];
+        hasThreeDLayerCatalog.value = true;
     }
 
     // ========== Map Swipe Configuration ==========
@@ -1098,6 +1161,7 @@ export const useLayerStore = defineStore('layerStore', () => {
         searchLayers,
         districtLayers,
         threeDLayers,
+        hasThreeDLayerCatalog,
         threeDLayerStateKey,
         hasDrawCard,
         layerTree,
@@ -1119,9 +1183,9 @@ export const useLayerStore = defineStore('layerStore', () => {
         collectLayerTreeLeafNodes,
         getLayerLeafNodesByFolder,
         registerThreeDLayer,
+        syncPublishedThreeDLayers,
         setThreeDLayerVisibility,
         unregisterThreeDLayer,
-        shpConverting,
         // ========== Map Swipe API ==========
         setSwipeConfig: (config: Partial<typeof swipeConfig.value>) => {
             swipeConfig.value = { ...swipeConfig.value, ...config }

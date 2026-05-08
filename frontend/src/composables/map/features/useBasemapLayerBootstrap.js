@@ -16,11 +16,17 @@ export function createBasemapLayerBootstrap({
     monitorLayerTimeout,
     selectedLayerRef,
     message,
-    defaultLayerId = 'google'
+    defaultLayerId = 'vector_amap_preset'
 }) {
     function initializeBasemapLayers() {
         const list = layerListRef?.value;
         if (!Array.isArray(list)) return [];
+        const defaultVisibleLayerIds = new Set(
+            list
+                .filter((item) => item?.visible)
+                .map((item) => String(item.id || '').trim())
+                .filter(Boolean)
+        );
 
         list.forEach((item, index) => {
             const config = layerConfigs.find((cfg) => cfg.id === item.id);
@@ -35,8 +41,9 @@ export function createBasemapLayerBootstrap({
             });
 
             if (item.visible && source) {
-                const isDefaultBaseLayer = item.id === defaultLayerId;
-                monitorLayerTimeout?.(layer, item.id, isDefaultBaseLayer, {
+                const isDefaultBaseLayer = item.id === defaultLayerId || defaultVisibleLayerIds.has(item.id);
+                const monitoredLayerId = isDefaultBaseLayer ? defaultLayerId : item.id;
+                monitorLayerTimeout?.(layer, monitoredLayerId, isDefaultBaseLayer, {
                     onTimeout: () => {
                         if (isDefaultBaseLayer) {
                             message?.warning?.(`${item.id}响应过慢，正在切换备用底图...`);

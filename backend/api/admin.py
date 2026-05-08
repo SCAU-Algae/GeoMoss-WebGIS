@@ -66,6 +66,50 @@ def _normalize_sql_value(value: Any) -> Any:
     return value
 
 
+def _table_columns_sync(conn, table_name: str) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            c.column_name AS name,
+            c.data_type AS type,
+            CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull,
+            CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 1 ELSE 0 END AS pk
+        FROM information_schema.columns c
+        LEFT JOIN information_schema.key_column_usage kcu
+            ON c.table_schema = kcu.table_schema
+            AND c.table_name = kcu.table_name
+            AND c.column_name = kcu.column_name
+        LEFT JOIN information_schema.table_constraints tc
+            ON kcu.constraint_schema = tc.constraint_schema
+            AND kcu.constraint_name = tc.constraint_name
+            AND tc.constraint_type = 'PRIMARY KEY'
+        WHERE c.table_schema = 'public' AND c.table_name = ?
+        ORDER BY c.ordinal_position ASC
+        """,
+        (table_name,),
+    ).fetchall()
+    return [
+        {
+            "name": str(dict(row).get("name") or ""),
+            "type": str(dict(row).get("type") or ""),
+            "notnull": int(dict(row).get("notnull") or 0),
+            "pk": int(dict(row).get("pk") or 0),
+        }
+        for row in rows
+    ]
+
+
+def _resolve_order_column(columns: List[Dict[str, Any]]) -> str:
+    names = [str(item.get("name") or "") for item in columns]
+    for preferred in ("updated_at", "created_at", "id"):
+        if preferred in names:
+            return _quote_identifier(preferred)
+    pk = next((item for item in columns if int(item.get("pk") or 0) == 1 and item.get("name")), None)
+    if pk:
+        return _quote_identifier(str(pk["name"]))
+    return "ctid"
+
+
 def _list_tables_sync() -> List[Dict[str, Any]]:
     with _db_connection() as conn:
         table_rows = conn.execute(
@@ -83,19 +127,10 @@ def _list_tables_sync() -> List[Dict[str, Any]]:
             if not table_name:
                 continue
 
-            columns = conn.execute(f"PRAGMA table_info({_quote_identifier(table_name)})").fetchall()
             result.append(
                 {
                     "name": table_name,
-                    "columns": [
-                        {
-                            "name": str(dict(col).get("name") or ""),
-                            "type": str(dict(col).get("type") or ""),
-                            "notnull": int(dict(col).get("notnull") or 0),
-                            "pk": int(dict(col).get("pk") or 0),
-                        }
-                        for col in columns
-                    ],
+                    "columns": _table_columns_sync(conn, table_name),
                 }
             )
 
@@ -108,8 +143,10 @@ def _list_table_rows_sync(table_name: str, limit: int, offset: int) -> List[Dict
     safe_offset = max(0, int(offset))
 
     with _db_connection() as conn:
+        columns = _table_columns_sync(conn, table_name)
+        order_column = _resolve_order_column(columns)
         rows = conn.execute(
-            f"SELECT rowid AS __rowid, * FROM {safe_table} ORDER BY rowid DESC LIMIT ? OFFSET ?",
+            f"SELECT ctid::text AS __rowid, * FROM {safe_table} ORDER BY {order_column} DESC LIMIT ? OFFSET ?",
             (safe_limit, safe_offset),
         ).fetchall()
 
@@ -128,8 +165,8 @@ def _build_where_clause(where: Dict[str, Any]) -> Dict[str, Any]:
 
     for key, value in where.items():
         if key == "__rowid":
-            clauses.append("rowid = ?")
-            values.append(int(value))
+            clauses.append("ctid = ?::tid")
+            values.append(str(value))
             continue
 
         col = _quote_identifier(key)
@@ -246,26 +283,157 @@ def _update_admin_contact_sync(contact: str) -> None:
         conn.commit()
 
 
+def _row_count(conn, table_name: str, where_sql: str = "1=1", params: tuple = ()) -> int:
+    try:
+        row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {_quote_identifier(table_name)} WHERE {where_sql}", params).fetchone()
+        return int((dict(row).get("cnt") if row else 0) or 0)
+    except Exception:
+        return 0
+
+
+def _fetch_limited(conn, sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    try:
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+    except Exception:
+        return []
+
+
 def _get_admin_overview_sync() -> Dict[str, Any]:
+    now_iso = _iso_now()
     with _db_connection() as conn:
         table_count = conn.execute(
             "SELECT COUNT(*) AS cnt FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
         ).fetchone()
 
-        total_users = conn.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()
-        total_sessions = conn.execute("SELECT COUNT(*) AS cnt FROM sessions").fetchone()
-        total_messages = conn.execute("SELECT COUNT(*) AS cnt FROM user_messages").fetchone()
-        active_announcement = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM announcements WHERE is_active = 1"
-        ).fetchone()
+        total_users = _row_count(conn, "users")
+        total_sessions = _row_count(conn, "sessions")
+        online_sessions = _row_count(conn, "sessions", "expires_at > ?", (now_iso,))
+        total_messages = _row_count(conn, "user_messages")
+        visible_messages = _row_count(conn, "user_messages", "is_visible = 1")
+        active_announcement = _row_count(conn, "announcements", "is_active = 1")
+        total_visits = _row_count(conn, "user_visits")
+        total_visit_events = _row_count(conn, "visit_tracking_events")
+        total_guest_identities = _row_count(conn, "guest_identity_records")
+        total_three_d_layers = _row_count(conn, "three_d_layers")
+        published_three_d_layers = _row_count(conn, "three_d_layers", "status = ?", ("published",))
+        processing_jobs = _row_count(
+            conn,
+            "geodata_processing_jobs",
+            "status IN (?, ?, ?)",
+            ("queued", "processing", "running"),
+        )
+
+        role_rows = _fetch_limited(
+            conn,
+            """
+            SELECT role, COUNT(*) AS cnt
+            FROM users
+            GROUP BY role
+            ORDER BY cnt DESC, role ASC
+            """
+        )
+        online_role_rows = _fetch_limited(
+            conn,
+            """
+            SELECT role, COUNT(*) AS cnt
+            FROM sessions
+            WHERE expires_at > ?
+            GROUP BY role
+            ORDER BY cnt DESC, role ASC
+            """,
+            (now_iso,),
+        )
+        recent_users = _fetch_limited(
+            conn,
+            """
+            SELECT
+                u.username,
+                u.role,
+                u.avatar_index,
+                u.created_at,
+                COALESCE(m.login_count, 0) AS login_count,
+                COALESCE(m.total_visit_count, 0) AS total_visit_count,
+                COALESCE(m.total_api_calls, 0) AS total_api_calls,
+                m.last_login_at,
+                m.last_logout_at
+            FROM users u
+            LEFT JOIN user_metrics m ON m.username = u.username
+            ORDER BY u.created_at DESC
+            LIMIT 12
+            """
+        )
+        active_sessions = _fetch_limited(
+            conn,
+            """
+            SELECT username, role, ip, user_agent, created_at, expires_at
+            FROM sessions
+            WHERE expires_at > ?
+            ORDER BY created_at DESC
+            LIMIT 12
+            """,
+            (now_iso,),
+        )
+        recent_visits = _fetch_limited(
+            conn,
+            """
+            SELECT username, role, ip_city, ip_region, ip_country, coord_source, geo_permission, visit_time, created_at
+            FROM visit_tracking_events
+            ORDER BY id DESC
+            LIMIT 12
+            """
+        )
+        top_users = _fetch_limited(
+            conn,
+            """
+            SELECT username, login_count, total_visit_count, total_api_calls, last_login_at, updated_at
+            FROM user_metrics
+            ORDER BY total_api_calls DESC, total_visit_count DESC, username ASC
+            LIMIT 12
+            """
+        )
+        geodata_jobs = _fetch_limited(
+            conn,
+            """
+            SELECT job_id, job_type, status, phase, progress, message, layer_id, dataset_id, updated_at, finished_at
+            FROM geodata_processing_jobs
+            ORDER BY updated_at DESC
+            LIMIT 8
+            """
+        )
+        three_d_layers = _fetch_limited(
+            conn,
+            """
+            SELECT id, name, status, feature_count, published_at, updated_at
+            FROM three_d_layers
+            ORDER BY sort_order ASC, updated_at DESC
+            LIMIT 8
+            """
+        )
 
     return {
         "table_count": int((dict(table_count).get("cnt") if table_count else 0) or 0),
-        "total_users": int((dict(total_users).get("cnt") if total_users else 0) or 0),
-        "total_sessions": int((dict(total_sessions).get("cnt") if total_sessions else 0) or 0),
-        "total_messages": int((dict(total_messages).get("cnt") if total_messages else 0) or 0),
-        "active_announcement": int((dict(active_announcement).get("cnt") if active_announcement else 0) or 0),
-        "snapshot_at": _iso_now(),
+        "total_users": total_users,
+        "total_sessions": total_sessions,
+        "online_sessions": online_sessions,
+        "total_messages": total_messages,
+        "visible_messages": visible_messages,
+        "active_announcement": active_announcement,
+        "total_visits": total_visits,
+        "total_visit_events": total_visit_events,
+        "total_guest_identities": total_guest_identities,
+        "total_three_d_layers": total_three_d_layers,
+        "published_three_d_layers": published_three_d_layers,
+        "processing_jobs": processing_jobs,
+        "users_by_role": role_rows,
+        "online_by_role": online_role_rows,
+        "recent_users": recent_users,
+        "active_sessions": active_sessions,
+        "recent_visits": recent_visits,
+        "top_users": top_users,
+        "geodata_jobs": geodata_jobs,
+        "three_d_layers": three_d_layers,
+        "snapshot_at": now_iso,
     }
 
 

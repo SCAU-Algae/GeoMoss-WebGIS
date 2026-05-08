@@ -2,19 +2,14 @@
  * 图层控制面板事件处理库（Phase 21）
  *
  * 功能：
- * - 处理底图切换与自定义 URL 加载
+ * - 处理底图切换
  * - 处理图层排序、显隐、透明度更新
- * - 处理自定义底图自动识别并落图
  */
 
 export function createLayerControlHandlers({
     selectedLayerRef,
-    customMapUrlRef,
     layerListRef,
-    layerInstances,
-    refreshLayersState,
-    createAutoTileSourceFromUrl,
-    message
+    refreshLayersState
 }) {
     /**
      * [改进] 删除第一层防抖，让 watch 防抖处理
@@ -33,42 +28,7 @@ export function createLayerControlHandlers({
     }
 
     /**
-     * 加载用户输入的 URL，按 XYZ -> WMS -> WMTS 自动识别并激活 custom 图层。
-     */
-    async function loadCustomMap() {
-        if (!customMapUrlRef?.value) return;
-
-        try {
-            const detected = await createAutoTileSourceFromUrl(customMapUrlRef.value);
-            const customLayer = layerInstances?.custom;
-
-            const kindTextMap = {
-                xyz: '标准XYZ',
-                'non-standard-xyz': '非标准XYZ',
-                wms: 'WMS',
-                wmts: 'WMTS'
-            };
-
-            message?.success?.(`自动识别图源: ${kindTextMap[detected.kind]}（${detected.detail}）`);
-
-            if (customLayer?.setSource) {
-                customLayer.setSource(detected.source);
-                const target = layerListRef?.value?.find((item) => item.id === 'custom');
-                if (target) {
-                    target.visible = true;
-                    refreshLayersState?.();
-                }
-            }
-        } catch (error) {
-            const errorMessage = error instanceof Error
-                ? error.message
-                : String(error || 'URL格式错误或无法解析');
-            message?.error?.(`加载自定义图源失败: ${errorMessage}`);
-        }
-    }
-
-    /**
-     * 统一接收图层切换与自定义 URL 加载。
+     * 统一接收图层切换。
      * [改进] 直接设置 ref，让 watch 处理防抖
      */
     function handleLayerChange(payload = {}) {
@@ -76,13 +36,6 @@ export function createLayerControlHandlers({
         if (nextLayerId) {
             // 直接设置，不防抖（防抖由 watch 处理）
             applyBasemapSelection(nextLayerId);
-        }
-
-        if (payload.source === 'custom-url' && customMapUrlRef) {
-            customMapUrlRef.value = String(payload.customUrl || '').trim();
-            if (customMapUrlRef.value) {
-                void loadCustomMap();
-            }
         }
     }
 
@@ -128,7 +81,6 @@ export function createLayerControlHandlers({
     }
 
     return {
-        loadCustomMap,
         handleLayerChange,
         handleLayerOrderUpdate
     };

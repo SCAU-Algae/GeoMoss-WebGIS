@@ -6,7 +6,27 @@
     v-if="shouldLoadAdvancedEffects"
     :get-viewer="getViewer"
     :get-cesium="getCesium"
+    :effects-settings="cesiumEffectsSettings"
   />
+
+  <Teleport to="body">
+    <CesiumToolsPanel
+      v-if="viewerReady"
+      :get-viewer="getViewer"
+      :get-cesium="getCesium"
+      :get-three-d-layers="getThreeDLayers"
+      @feature-select="handleFeatureSelect"
+      @effects-change="handleEffectsChange"
+      @style-change="handleTilesetStyleChange"
+    />
+  </Teleport>
+
+  <Teleport to="body">
+    <CesiumFeaturePopup
+      :feature="selectedCesiumFeature"
+      @close="selectedCesiumFeature = null"
+    />
+  </Teleport>
 
   <!-- 坐标显示面板 -->
   <div class="map-controls-group">
@@ -20,30 +40,22 @@
   </div>
 
   <div class="cesium-controls">
-    <button @click="flyToEverest" class="fly-btn">🏔️ 珠穆朗玛</button>
-    <button @click="loadSimulatedWind" class="fly-btn">🌬️ 模拟风场</button>
-  </div>
-
-  <!-- SHP → 3D 转换进度条（Teleport 到 body 确保始终可见） -->
-  <Teleport to="body">
-    <div v-if="shpConverting" class="shp-progress-overlay">
-    <div class="shp-progress-card">
-      <div class="shp-progress-title">🏗 SHP → 3D Tiles 转换中</div>
-      <div class="shp-progress-bar-wrap">
-        <div class="shp-progress-bar" :class="shpProgressPhase" :style="{ width: (shpProgress * 100) + '%' }"></div>
-      </div>
-      <div class="shp-progress-text">{{ shpProgressText }}</div>
-      <div class="shp-progress-detail" v-if="shpProgressPhase !== 'uploading' && shpProgressPhase !== 'processing'">
-        <span>{{ shpProgressDetail }}</span>
-      </div>
-      <div class="shp-progress-stats" v-if="shpProgressPhase === 'uploading'">
-        <span>{{ shpUploadedSize }} / {{ shpFileSize }}</span>
-        <span>{{ shpUploadSpeed }}</span>
-        <span>剩余 {{ shpEta }}</span>
-      </div>
-      </div>
+    <div class="cesium-basemap-switch" role="group" aria-label="三维底图">
+      <button
+        v-for="option in CESIUM_BASEMAP_OPTIONS"
+        :key="option.id"
+        class="basemap-toggle"
+        :class="{ active: activeCesiumBasemap === option.id }"
+        :disabled="option.requiresToken && !TDT_TOKEN"
+        :title="option.title"
+        @click="handleCesiumBasemapChange(option.id)"
+      >
+        {{ option.label }}
+      </button>
     </div>
-  </Teleport>
+    <button @click="flyToEverest" class="fly-btn">珠穆朗玛</button>
+    <button @click="loadSimulatedWind" class="fly-btn">模拟风场</button>
+  </div>
 
   <!-- 风场参数调节面板 -->
   <div v-if="wind2D" class="wind-controls">
@@ -77,7 +89,16 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useMessage } from '../../composables/useMessage';
 import { showLoading, hideLoading } from '../../utils/loading';
 import { useLayerStore } from '../../stores';
+import {
+  listPublishedTerrainLayers,
+  listPublishedThreeDLayers,
+  resolveTerrainTileUrlTemplate,
+  resolveThreeDTilesUrl
+} from '../../api/threed';
+import { createHeightmapTerrainProvider } from '../../composables/cesium/features/useCesiumTerrainProvider';
 import CesiumAdvancedEffects from './CesiumAdvancedEffects.vue';
+import CesiumFeaturePopup from './CesiumFeaturePopup.vue';
+import CesiumToolsPanel from './CesiumToolsPanel.vue';
 import Wind2D from './Wind2D';
 
 let Cesium = null;
@@ -86,6 +107,28 @@ let Cesium = null;
 const TDT_TOKEN = import.meta.env.VITE_TIANDITU_TK;
 const TDT_SUBDOMAINS = ['0', '1', '2', '3', '4', '5', '6', '7'];
 const TDT_SERVICE_ROOT = 'https://t{s}.tianditu.gov.cn/';
+const CESIUM_DEFAULT_BASEMAP = 'tianditu-vector';
+const CESIUM_BASEMAP_STORAGE_KEY = 'webgis_cesium_basemap_v2';
+const CESIUM_BASEMAP_OPTIONS = [
+  {
+    id: 'tianditu-vector',
+    label: '天地图矢量',
+    title: '使用天地图矢量和注记，优先匹配 WGS84 / CGCS2000 三维数据',
+    requiresToken: true
+  },
+  {
+    id: 'tianditu-imagery',
+    label: '天地图影像',
+    title: '使用天地图影像和注记；若当前网络或 WAF 拦截，可能加载较慢',
+    requiresToken: true
+  },
+  {
+    id: 'amap-vector',
+    label: '高德',
+    title: '使用高德矢量底图，国内互联网访问稳定但存在 GCJ-02 偏移',
+    requiresToken: false
+  }
+];
 
 const TDT_CESIUM_JS_URL = 'https://api.tianditu.gov.cn/cdn/demo/sanwei/static/cesium/Cesium.js';
 const TDT_CESIUM_CSS_URL = 'https://api.tianditu.gov.cn/cdn/demo/sanwei/static/cesium/Widgets/widgets.css';
@@ -102,23 +145,29 @@ let handler = null;
 const wind2D = ref(null); // Wind2D 实例
 const coordinateDisplay = ref('经度: 0.000000, 纬度: 0.000000, 海拔: 0.00米');
 const shouldLoadAdvancedEffects = ref(false);
-const tilesetUrl = ref('');
-const shpConverting = ref(false);
-const shpProgress = ref(0);
-const shpProgressText = ref('');
-const shpProgressPhase = ref('');
-const shpProgressDetail = ref('');
-const shpFileSize = ref('');
-const shpUploadedSize = ref('');
-const shpUploadSpeed = ref('');
-const shpEta = ref('');
-const threeDLayers = ref([]);  // { id, name, tileset, visible }
+const activeCesiumBasemap = ref(resolveInitialCesiumBasemap());
+const viewerReady = ref(false);
+const cesiumEffectsSettings = ref({ fog: false, bloom: false, hbao: false, tilt: false });
+const selectedCesiumFeature = ref(null);
+const threeDLayers = ref([]);  // { id, name, layerKind, tileset, terrainProvider, visible, loading }
+let activeBaseImageryLayers = [];
 let next3DLayerId = 0;
 const message = useMessage();
 const layerStore = useLayerStore();
 
 function syncStoreForLayer(item) {
-  layerStore.registerThreeDLayer({ id: item.id, name: item.name, visible: item.visible });
+  layerStore.registerThreeDLayer({
+    id: item.id,
+    name: item.name,
+    visible: item.visible,
+    layerKind: item.layerKind || '3dtiles',
+    tilesetUrl: item.tilesetUrl || '',
+    tileUrlTemplate: item.tileUrlTemplate || '',
+    bounds: item.bounds || [],
+    description: item.description || '',
+    featureCount: item.featureCount || 0,
+    metadata: item.metadata || {}
+  });
 }
 
 // 监听 store 中的可见性变化（例如用户从 TOC 面板勾选/取消勾选）
@@ -139,8 +188,7 @@ watch(
     next.forEach(({ id, visible }) => {
       const item = threeDLayers.value.find((l) => l.id === id);
       if (item && item.visible !== visible) {
-        item.visible = visible;
-        if (item.tileset) item.tileset.show = visible;
+        setThreeDLayerVisibility(id, visible);
       }
     });
     // 若 store 中已不存在某图层（用户通过 TOC 移除），清理本地对应的 primitive
@@ -148,6 +196,7 @@ watch(
     for (let i = threeDLayers.value.length - 1; i >= 0; i--) {
       const local = threeDLayers.value[i];
       if (!storeIds.has(local.id)) {
+        if (local.layerKind === 'terrain' && local.visible) resetTerrainProvider();
         try { viewer?.scene?.primitives?.remove(local.tileset); } catch (_) {}
         threeDLayers.value.splice(i, 1);
       }
@@ -217,12 +266,14 @@ function clearWind2D() {
 }
 
 onUnmounted(() => {
+  viewerReady.value = false;
   shouldLoadAdvancedEffects.value = false;
   if (handler) {
     handler.destroy();
     handler = null;
   }
   clearWind2D();
+  activeBaseImageryLayers = [];
   if (viewer) {
     try {
       if (viewer._creditCheckInterval) {
@@ -244,11 +295,13 @@ async function bootCesium() {
 
     initViewer();
     setupInteractions();
-    addBaseImageryLayers();
+    setCesiumBasemap(activeCesiumBasemap.value, { silent: true });
 
     initOfficialTerrain();
+    viewerReady.value = true;
     shouldLoadAdvancedEffects.value = true;
-    message.success('天地图基础影像加载成功。');
+    await refreshPublishedThreeDLayers();
+    message.success('3D 底图加载成功。');
 
     // 风场在初始化完毕后即可准备加载（但需要手动点击按钮或自动加载）
     // 这里不自动加载，避免占满视野，等待用户点击“加载模拟风场”
@@ -266,6 +319,22 @@ function getViewer() {
 
 function getCesium() {
   return Cesium || window.Cesium;
+}
+
+function getThreeDLayers() {
+  return threeDLayers.value;
+}
+
+function handleEffectsChange(settings) {
+  cesiumEffectsSettings.value = { ...(settings || {}) };
+}
+
+function handleTilesetStyleChange() {
+  // 样式应用由 CesiumToolsPanel 直接处理；这里保留事件入口，后续可同步到图层配置。
+}
+
+function handleFeatureSelect(feature) {
+  selectedCesiumFeature.value = feature || null;
 }
 
 async function loadOfficialCesiumRuntime() {
@@ -361,31 +430,161 @@ function setupInteractions() {
   }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 }
 
-function addBaseImageryLayers() {
-  const imageryLayers = viewer.imageryLayers;
-  const imgLayer = new Cesium.UrlTemplateImageryProvider({
-    url: `${TDT_SERVICE_ROOT}DataServer?T=img_w&x={x}&y={y}&l={z}&tk=${TDT_TOKEN}`,
-    subdomains: TDT_SUBDOMAINS,
-    tilingScheme: new Cesium.WebMercatorTilingScheme(),
-    maximumLevel: 17
-  });
-  imageryLayers.addImageryProvider(imgLayer);
+function isCesiumBasemapAvailable(id) {
+  const option = CESIUM_BASEMAP_OPTIONS.find((item) => item.id === String(id || '').trim());
+  if (!option) return false;
+  return !(option.requiresToken && !TDT_TOKEN);
+}
 
-  const iboLayer = new Cesium.UrlTemplateImageryProvider({
-    url: `${TDT_SERVICE_ROOT}DataServer?T=ibo_w&x={x}&y={y}&l={z}&tk=${TDT_TOKEN}`,
+function resolveCesiumBasemapId(id) {
+  const normalized = String(id || '').trim();
+  if (isCesiumBasemapAvailable(normalized)) return normalized;
+  if (isCesiumBasemapAvailable(CESIUM_DEFAULT_BASEMAP)) return CESIUM_DEFAULT_BASEMAP;
+  return 'amap-vector';
+}
+
+function resolveInitialCesiumBasemap() {
+  if (typeof window === 'undefined') return resolveCesiumBasemapId(CESIUM_DEFAULT_BASEMAP);
+  try {
+    return resolveCesiumBasemapId(window.localStorage.getItem(CESIUM_BASEMAP_STORAGE_KEY) || CESIUM_DEFAULT_BASEMAP);
+  } catch (_) {
+    return resolveCesiumBasemapId(CESIUM_DEFAULT_BASEMAP);
+  }
+}
+
+function persistCesiumBasemap(id) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CESIUM_BASEMAP_STORAGE_KEY, id);
+  } catch (_) {}
+}
+
+function clearBaseImageryLayers() {
+  const imageryLayers = viewer?.imageryLayers;
+  if (!imageryLayers) {
+    activeBaseImageryLayers = [];
+    return;
+  }
+
+  for (let i = activeBaseImageryLayers.length - 1; i >= 0; i--) {
+    try {
+      imageryLayers.remove(activeBaseImageryLayers[i], true);
+    } catch (_) {}
+  }
+  activeBaseImageryLayers = [];
+}
+
+function createAmapVectorProvider() {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: 'https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+    tilingScheme: new Cesium.WebMercatorTilingScheme(),
+    minimumLevel: 1,
+    maximumLevel: 18
+  });
+}
+
+function createTiandituTemplateProvider(type, maxLevel = 17) {
+  return new Cesium.UrlTemplateImageryProvider({
+    url: `${TDT_SERVICE_ROOT}DataServer?T=${type}&x={x}&y={y}&l={z}&tk=${TDT_TOKEN}`,
     subdomains: TDT_SUBDOMAINS,
     tilingScheme: new Cesium.WebMercatorTilingScheme(),
-    maximumLevel: 10
+    minimumLevel: 1,
+    maximumLevel: maxLevel
   });
-  imageryLayers.addImageryProvider(iboLayer);
+}
+
+function createTiandituImageryProviders() {
+  return [
+    createTiandituTemplateProvider('img_w', 17),
+    createTiandituTemplateProvider('cia_w', 17)
+  ];
+}
+
+function createTiandituVectorProviders() {
+  return [
+    createTiandituTemplateProvider('vec_w', 18),
+    createTiandituTemplateProvider('cva_w', 18)
+  ];
+}
+
+function setCesiumBasemap(id, options = {}) {
+  if (!viewer || !Cesium) return false;
+  const nextId = resolveCesiumBasemapId(id);
+  const requestedId = String(id || '').trim();
+  const nextOption = CESIUM_BASEMAP_OPTIONS.find((item) => item.id === nextId);
+
+  if (activeCesiumBasemap.value === nextId && activeBaseImageryLayers.length > 0) {
+    return true;
+  }
+
+  clearBaseImageryLayers();
+  const imageryLayers = viewer.imageryLayers;
+  if (!imageryLayers) return false;
+
+  const providers = nextId === 'tianditu-vector'
+    ? createTiandituVectorProviders()
+    : (nextId === 'tianditu-imagery'
+      ? createTiandituImageryProviders()
+      : [createAmapVectorProvider()]);
+
+  activeBaseImageryLayers = providers.map((provider) => imageryLayers.addImageryProvider(provider));
+  activeCesiumBasemap.value = nextId;
+  persistCesiumBasemap(nextId);
+
+  if (!options.silent) {
+    if (requestedId && requestedId !== nextId) {
+      message.warning('天地图 Token 未配置，已回退到高德三维底图。');
+    } else {
+      message.success(`三维底图已切换为${nextOption?.label || '默认图源'}`);
+    }
+  }
+  return true;
+}
+
+function handleCesiumBasemapChange(id) {
+  setCesiumBasemap(id);
 }
 
 function initOfficialTerrain() {
-  // 天地图地形 URL 含查询参数，与 Cesium GeoTerrainProvider 的路径追加协议不兼容，
-  // 直接使用内置椭球地形，3D 白模在椭球面上正常显示。
-  // 如需真实地形，可将地形数据 (quantized-mesh) 自行托管后用 CesiumTerrainProvider 加载。
   viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
   return false;
+}
+
+function resetTerrainProvider() {
+  if (!viewer || !Cesium) return;
+  viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+}
+
+function applyTerrainLayer(item, visible) {
+  if (!viewer || !Cesium || !item) return false;
+  item.visible = !!visible;
+  if (!visible) {
+    resetTerrainProvider();
+    layerStore.setThreeDLayerVisibility(item.id, false);
+    return true;
+  }
+
+  if (!item.terrainProvider) {
+    item.terrainProvider = createHeightmapTerrainProvider(Cesium, item);
+  }
+  if (!item.terrainProvider) {
+    message.warning('当前 Cesium 运行时不支持动态 DEM 地形，已保留椭球地形。');
+    layerStore.setThreeDLayerVisibility(item.id, false);
+    item.visible = false;
+    return false;
+  }
+
+  viewer.terrainProvider = item.terrainProvider;
+  layerStore.setThreeDLayerVisibility(item.id, true);
+  const bounds = Array.isArray(item.bounds) ? item.bounds : [];
+  if (bounds.length >= 4) {
+    viewer.camera.flyTo({
+      destination: Cesium.Rectangle.fromDegrees(bounds[0], bounds[1], bounds[2], bounds[3]),
+      duration: 1.8
+    });
+  }
+  message.success(`地形图层 "${item.name}" 已启用`);
+  return true;
 }
 
 // --- 风场集成代码 ---
@@ -572,16 +771,37 @@ async function load3DTilesUrl(url, options = {}) {
     message.error('3D 场景尚未就绪');
     return null;
   }
-  const { flyTo = true, name = '' } = options || {};
+  const { flyTo = true, name = '', id = '', description = '', featureCount = 0, metadata = {} } = options || {};
   try {
-    const tileset = await Cesium.Cesium3DTileset.fromUrl(url);
-    const layerId = `3d_${++next3DLayerId}`;
+    const resolvedUrl = resolveThreeDTilesUrl(url);
+    const tileset = await Cesium.Cesium3DTileset.fromUrl(resolvedUrl);
+    const layerId = id || `3d_${++next3DLayerId}`;
     const displayName = name || `3D 模型 ${next3DLayerId}`;
     if (name) tileset._name = displayName;
 
     viewer.scene.primitives.add(tileset);
-    threeDLayers.value.push({ id: layerId, name: displayName, tileset, visible: true });
-    syncStoreForLayer({ id: layerId, name: displayName, visible: true });
+    const existing = threeDLayers.value.find((item) => item.id === layerId);
+    if (existing) {
+      existing.tileset = tileset;
+      existing.visible = true;
+      existing.layerKind = '3dtiles';
+      existing.tilesetUrl = resolvedUrl;
+      existing.loading = false;
+    } else {
+      threeDLayers.value.push({
+        id: layerId,
+        name: displayName,
+        layerKind: '3dtiles',
+        tileset,
+        visible: true,
+        tilesetUrl: resolvedUrl,
+        description,
+        featureCount,
+        metadata,
+        loading: false
+      });
+    }
+    syncStoreForLayer({ id: layerId, name: displayName, layerKind: '3dtiles', visible: true, tilesetUrl: resolvedUrl, description, featureCount, metadata });
 
     if (flyTo) {
       viewer.flyTo(tileset, {
@@ -601,192 +821,111 @@ async function load3DTilesUrl(url, options = {}) {
   }
 }
 
-function loadTilesetFromInput() {
-  const url = tilesetUrl.value.trim();
-  if (!url) return;
-  load3DTilesUrl(url, { name: url.split('/').pop()?.replace('.json', '') || '3D模型' });
-}
-
-async function handle3DTilesUpload(event) {
-  const file = event.target?.files?.[0];
-  if (!file) return;
-  if (!viewer || !Cesium) { message.error('3D 场景尚未就绪'); return; }
-
-  showLoading('正在解析 3D Tiles 压缩包...');
+async function refreshPublishedThreeDLayers() {
   try {
-    const { default: JSZip } = await import('jszip');
-    const zip = await JSZip.loadAsync(file);
-    const fileMap = new Map();
+    const [tilesPayload, terrainPayload] = await Promise.all([
+      listPublishedThreeDLayers(),
+      listPublishedTerrainLayers().catch(() => ({ data: [] }))
+    ]);
+    const list = Array.isArray(tilesPayload?.data) ? tilesPayload.data : [];
+    const terrainList = Array.isArray(terrainPayload?.data) ? terrainPayload.data : [];
+    const previous = new Map(threeDLayers.value.map((item) => [item.id, item]));
+    const normalizedTiles = list
+      .map((item) => {
+        const id = `3d_pub_${String(item?.id || '').trim()}`;
+        const tilesetUrlValue = resolveThreeDTilesUrl(item?.tileset_url || '');
+        if (!item?.id || !tilesetUrlValue) return null;
+        const existing = previous.get(id);
+        return {
+          id,
+          sourceId: String(item.id),
+          layerKind: '3dtiles',
+          name: String(item?.name || '3D 图层'),
+          visible: existing?.visible === true || layerStore.threeDLayers?.find?.((layer) => layer.id === id)?.visible === true,
+          tileset: existing?.tileset || null,
+          tilesetUrl: tilesetUrlValue,
+          description: String(item?.description || ''),
+          featureCount: Number(item?.feature_count || 0),
+          metadata: item?.metadata || {},
+          loading: existing?.loading === true
+        };
+      })
+      .filter(Boolean);
+    const normalizedTerrain = terrainList
+      .map((item) => {
+        const id = `terrain_pub_${String(item?.id || '').trim()}`;
+        const tileUrlTemplate = resolveTerrainTileUrlTemplate(item?.tile_url_template || '');
+        if (!item?.id || !tileUrlTemplate) return null;
+        const existing = previous.get(id);
+        return {
+          id,
+          sourceId: String(item.id),
+          layerKind: 'terrain',
+          name: String(item?.name || 'DEM 地形'),
+          visible: existing?.visible === true || layerStore.threeDLayers?.find?.((layer) => layer.id === id)?.visible === true,
+          terrainProvider: existing?.terrainProvider || null,
+          tileUrlTemplate,
+          bounds: Array.isArray(item?.bounds) ? item.bounds.map(Number).filter(Number.isFinite) : [],
+          description: String(item?.description || ''),
+          featureCount: 1,
+          metadata: item?.metadata || {},
+          loading: false
+        };
+      })
+      .filter(Boolean);
 
-    // 解压所有文件到内存
-    const entries = Object.values(zip.files).filter((e) => !e.dir);
-    for (const entry of entries) {
-      const name = entry.name.split('/').pop(); // 只用文件名
-      const data = await entry.async('arraybuffer');
-      const blob = new Blob([data]);
-      const objectUrl = URL.createObjectURL(blob);
-      fileMap.set(entry.name, { objectUrl, blob, name: name });
-    }
+    const normalized = [...normalizedTiles, ...normalizedTerrain];
 
-    // 找到 tileset.json
-    const tilesetEntry = entries.find((e) => e.name.endsWith('tileset.json'));
-    if (!tilesetEntry) throw new Error('压缩包中未找到 tileset.json');
-
-    // 读取并重写 tileset.json 中的 URI
-    const tilesetText = await tilesetEntry.async('text');
-    const tileset = JSON.parse(tilesetText);
-
-    // 递归重写所有 URI 为 object URL
-    function rewriteUris(node) {
-      if (!node) return;
-      if (node.uri) {
-        // 在 fileMap 中查找匹配的文件
-        for (const [path, info] of fileMap) {
-          if (path.endsWith(node.uri) || path === node.uri || info.name === node.uri) {
-            node.uri = info.objectUrl;
-            break;
-          }
-        }
+    threeDLayers.value = normalized;
+    layerStore.syncPublishedThreeDLayers?.(normalized.map((item) => ({
+      id: item.id,
+      name: item.name,
+      visible: item.visible,
+      layerKind: item.layerKind || '3dtiles',
+      tilesetUrl: item.tilesetUrl,
+      tileUrlTemplate: item.tileUrlTemplate,
+      bounds: item.bounds,
+      description: item.description,
+      featureCount: item.featureCount,
+      metadata: item.metadata
+    })));
+    normalized.forEach((item) => {
+      if (item.visible && item.layerKind === 'terrain') {
+        applyTerrainLayer(item, true);
+      } else if (item.visible && !item.tileset && item.tilesetUrl) {
+        setThreeDLayerVisibility(item.id, true);
       }
-      if (node.content?.uri) {
-        for (const [path, info] of fileMap) {
-          if (path.endsWith(node.content.uri) || path === node.content.uri || info.name === node.content.uri) {
-            node.content.uri = info.objectUrl;
-            break;
-          }
-        }
-      }
-      if (node.children) node.children.forEach(rewriteUris);
-    }
-    rewriteUris(tileset.root);
-
-    // 创建 tileset.json 的 blob URL
-    const tilesetBlob = new Blob([JSON.stringify(tileset)], { type: 'application/json' });
-    const tilesetUrl = URL.createObjectURL(tilesetBlob);
-
-    await load3DTilesUrl(tilesetUrl, { name: file.name.replace('.zip', '') });
+    });
   } catch (error) {
-    message.error(`3D Tiles 加载失败: ${error.message || error}`);
-  } finally {
-    hideLoading();
+    layerStore.syncPublishedThreeDLayers?.([]);
+    message.warning(`3D 图层列表加载失败: ${error?.message || error}`);
   }
-  // 重置 input 以允许重复选择同一文件
-  event.target.value = '';
-}
-
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatSeconds(s) {
-  if (s < 1) return '0s';
-  if (s < 60) return Math.ceil(s) + 's';
-  return Math.floor(s / 60) + 'm' + Math.ceil(s % 60) + 's';
-}
-
-function handleShpTo3D(config) {
-  // config = { fileToken, heightField, baseColor, opacity, classificationField, colorRamp }
-  const token = localStorage.getItem('webgis_auth_token') || '';
-  const backendBase = (import.meta.env.VITE_BACKEND_URL ?? '') || '';
-
-  if (!token) {
-    message.error('请先登录后再上传 3D 数据');
-    return;
-  }
-
-  shpConverting.value = true;
-  layerStore.shpConverting = true;
-  shpProgress.value = 0;
-  shpProgressText.value = '正在提交转换请求...';
-  shpProgressPhase.value = 'idle';
-  shpProgressDetail.value = '';
-  shpFileSize.value = '';
-  shpUploadedSize.value = '';
-  shpUploadSpeed.value = '';
-  shpEta.value = '';
-
-  fetch(`${backendBase}/api/3d/upload-shp`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : '',
-    },
-    body: JSON.stringify({
-      file_token: config.fileToken,
-      height_field: config.heightField || '',
-      base_color: config.baseColor || '#68c282',
-      opacity: config.opacity || 1.0,
-      classification_field: config.classificationField || '',
-      color_ramp: config.colorRamp || 'greens',
-    }),
-  }).then(async (resp) => {
-    if (resp.status === 401) {
-      throw new Error('登录已过期，请刷新页面重新登录');
-    }
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || `服务器错误 (${resp.status})`);
-    }
-    const job = await resp.json();
-    const jobId = job.job_id;
-    let tilesetUrl = '';
-
-    const phaseLabels = {
-      extracting: '正在解压 SHP 压缩包...',
-      parsing: '正在解析 Shapefile 字段...',
-      generating: '正在生成 3D Tiles 模型...',
-      processing: '处理中...',
-    };
-
-    for (let i = 0; i < 180; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-      try {
-        const pollResp = await fetch(`${backendBase}/api/3d/job/${jobId}`);
-        const status = await pollResp.json();
-        shpProgress.value = 0.05 + (status.progress || 0) * 0.9;
-        shpProgressText.value = phaseLabels[status.phase] || status.message || '处理中...';
-        shpProgressDetail.value = status.phase;
-        shpProgressPhase.value = status.phase === 'done' ? 'done' : 'processing';
-
-        if (status.phase === 'done') {
-          tilesetUrl = status.tileset_url;
-          shpProgress.value = 1;
-          shpProgressText.value = `完成：${status.feature_count} 栋建筑`;
-          shpProgressPhase.value = 'done';
-          break;
-        }
-        if (status.phase === 'error') throw new Error(status.message || '处理失败');
-      } catch (e) {
-        if (e.message.includes('处理失败') || e.message.includes('登录')) throw e;
-      }
-    }
-    if (!tilesetUrl) throw new Error('处理超时（3 分钟）');
-
-    shpProgressPhase.value = 'loading';
-    shpProgressText.value = '正在加载到场景...';
-    const name = '3D建筑';
-    await load3DTilesUrl(`${backendBase}${tilesetUrl}`, { name });
-  }).catch((e) => {
-    message.error(`转换失败: ${e.message}`);
-  }).finally(() => {
-    resetShpState();
-  });
-}
-
-function resetShpState() {
-  shpConverting.value = false;
-  layerStore.shpConverting = false;
-  shpProgress.value = 0;
 }
 
 function setThreeDLayerVisibility(id, visible) {
   const item = threeDLayers.value.find((l) => l.id === id);
   if (!item) return false;
-  item.visible = !!visible;
+  const nextVisible = !!visible;
+  if (item.layerKind === 'terrain') {
+    return applyTerrainLayer(item, nextVisible);
+  }
+  if (nextVisible && !item.tileset && item.tilesetUrl) {
+    if (item.loading) return true;
+    item.loading = true;
+    load3DTilesUrl(item.tilesetUrl, {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      featureCount: item.featureCount,
+      metadata: item.metadata,
+      flyTo: true
+    }).finally(() => {
+      item.loading = false;
+    });
+    layerStore.setThreeDLayerVisibility(id, true);
+    return true;
+  }
+  item.visible = nextVisible;
   if (item.tileset) item.tileset.show = item.visible;
   layerStore.setThreeDLayerVisibility(id, item.visible);
   return true;
@@ -796,6 +935,7 @@ function removeThreeDLayer(id) {
   const idx = threeDLayers.value.findIndex((l) => l.id === id);
   if (idx < 0) return false;
   const item = threeDLayers.value[idx];
+  if (item.layerKind === 'terrain' && item.visible) resetTerrainProvider();
   try { viewer?.scene?.primitives?.remove(item.tileset); } catch (_) {}
   threeDLayers.value.splice(idx, 1);
   layerStore.unregisterThreeDLayer(id);
@@ -805,7 +945,17 @@ function removeThreeDLayer(id) {
 
 function zoomToThreeDLayer(id) {
   const item = threeDLayers.value.find((l) => l.id === id);
-  if (!item || !viewer || !Cesium || !item.tileset) return false;
+  if (!item || !viewer || !Cesium) return false;
+  if (item.layerKind === 'terrain') {
+    const bounds = Array.isArray(item.bounds) ? item.bounds : [];
+    if (bounds.length < 4) return false;
+    viewer.camera.flyTo({
+      destination: Cesium.Rectangle.fromDegrees(bounds[0], bounds[1], bounds[2], bounds[3]),
+      duration: 1.8
+    });
+    return true;
+  }
+  if (!item.tileset) return false;
   try {
     viewer.flyTo(item.tileset, {
       duration: 2.0,
@@ -827,13 +977,13 @@ function hasThreeDLayer(id) {
 
 defineExpose({
   load3DTilesUrl,
+  refreshPublishedThreeDLayers,
   getViewer,
+  getCesium,
   setThreeDLayerVisibility,
   removeThreeDLayer,
   zoomToThreeDLayer,
-  hasThreeDLayer,
-  handleShpTo3D,
-  handle3DTilesUpload
+  hasThreeDLayer
 });
 </script>
 
@@ -952,9 +1102,60 @@ defineExpose({
   bottom: 60px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 2;
+  z-index: 1200;
   display: flex;
+  align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100% - 24px);
+}
+
+.cesium-basemap-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--glass-bg-heavy);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.basemap-toggle {
+  min-width: 58px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0 12px;
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  transition: color var(--duration-fast) var(--ease-spatial),
+    background var(--duration-fast) var(--ease-spatial),
+    box-shadow var(--duration-fast) var(--ease-spatial),
+    transform var(--duration-fast) var(--ease-spatial);
+}
+
+.basemap-toggle:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.basemap-toggle.active {
+  color: var(--deep-1);
+  background: var(--neon-cyan);
+  box-shadow: var(--neon-cyan-glow);
+  font-weight: 600;
+}
+
+.basemap-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .fly-btn {
@@ -975,6 +1176,24 @@ defineExpose({
   border-color: var(--border-active);
   box-shadow: var(--neon-cyan-glow);
   background: var(--surface-hover);
+}
+
+@media (max-width: 768px) {
+  .cesium-controls {
+    bottom: 74px;
+    width: calc(100% - 24px);
+    gap: 8px;
+  }
+
+  .cesium-basemap-switch {
+    order: -1;
+  }
+
+  .basemap-toggle {
+    min-width: 52px;
+    height: 30px;
+    padding: 0 10px;
+  }
 }
 
 /* 风场控制面板样式 */
